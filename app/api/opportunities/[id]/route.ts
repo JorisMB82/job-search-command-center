@@ -22,6 +22,13 @@ function normalizeText(value: unknown): string | null | undefined {
   return trimmed || null;
 }
 
+function normalizeDate(value: unknown): string | null | undefined {
+  const text = normalizeText(value);
+  if (text === undefined) return undefined;
+  if (!text) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
@@ -55,7 +62,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (body.role_bucket !== undefined && isRoleBucket(body.role_bucket)) update.role_bucket = body.role_bucket;
   if (body.priority !== undefined && isPriority(body.priority)) update.priority = body.priority;
   if (body.is_pinned !== undefined) update.is_pinned = Boolean(body.is_pinned);
-  if (body.next_action_date !== undefined) update.next_action_date = normalizeText(body.next_action_date) ?? null;
+  if (body.listing_posted_date !== undefined) update.listing_posted_date = normalizeDate(body.listing_posted_date) ?? null;
+  if (body.next_action_date !== undefined) update.next_action_date = normalizeDate(body.next_action_date) ?? null;
   if (body.network_notes !== undefined) update.network_notes = normalizeText(body.network_notes) ?? null;
   if (body.source !== undefined) update.source = normalizeText(body.source) ?? null;
 
