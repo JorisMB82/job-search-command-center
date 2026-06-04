@@ -210,7 +210,7 @@ export function DashboardClient() {
       label: STATUS_LABELS[status],
       count,
       percent,
-      width: metrics.total === 0 ? 100 : Math.max(22, percent),
+      width: metrics.total === 0 ? 100 : Math.max(56, percent),
     };
   });
 
@@ -233,55 +233,57 @@ export function DashboardClient() {
         <div className="metric-card"><span>Interviews</span><strong>{metrics.interviews}</strong></div>
       </section>
 
-      <div className="grid dashboard-grid">
-        <section className="card stack">
-          <h2>Role bucket map</h2>
-          <p className="muted">Shows market volume by target role family. Use traction later to decide where to focus.</p>
-          {bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}
-        </section>
+      <div className="dashboard-overview">
+        <div className="dashboard-side stack">
+          <section className="card stack">
+            <h2>Needs attention</h2>
+            <p className="muted">Overdue, stale, or high-priority opportunities that should not slip.</p>
+            {attentionItems.length === 0 ? <p className="muted">Nothing needs attention right now.</p> : (
+              <div className="attention-list">
+                {attentionItems.map(({ opportunity, reasons }) => (
+                  <article className="attention-item" key={opportunity.id}>
+                    <div className="row"><strong>{opportunity.company}</strong><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div>
+                    <p>{opportunity.role}</p>
+                    <p className="muted">{reasons.join(" · ")}</p>
+                    <Link href={`/opportunities/${opportunity.id}`}>Review</Link>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
 
-        <section className="card stack">
+          <section className="card stack">
+            <h2>Pinned Top 5</h2>
+            <p className="muted">Keep the roles that deserve extra effort, warm-intro search, and tighter follow-up here.</p>
+            {pinnedOpportunities.length === 0 ? <p className="muted">No pinned opportunities yet.</p> : pinnedOpportunities.map((opportunity) => (
+              <article className="mini-card" key={opportunity.id}>
+                <div className="row"><strong>{opportunity.role}</strong><span className="badge">{PRIORITY_LABELS[opportunity.priority]}</span></div>
+                <p>{opportunity.company} · {opportunity.role_bucket}</p>
+                <p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>
+                {opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}
+                <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
+              </article>
+            ))}
+          </section>
+
+          <section className="card stack">
+            <h2>Role bucket map</h2>
+            <p className="muted">Shows market volume by target role family. Use traction later to decide where to focus.</p>
+            {bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}
+          </section>
+        </div>
+
+        <section className="card stack funnel-card">
           <h2>Status funnel</h2>
           <p className="muted">Count and percentage of the total pipeline in each stage.</p>
           <div className="visual-funnel" aria-label="Opportunity status funnel">
             {funnelStages.map((stage) => (
               <div className="funnel-band" key={stage.status} style={{ width: `${stage.width}%` }}>
-                <span>{stage.label}</span>
-                <strong>{stage.count} · {formatPercent(stage.count, metrics.total)}</strong>
+                <span className="funnel-label">{stage.label}</span>
+                <strong className="funnel-value">{stage.count} · {formatPercent(stage.count, metrics.total)}</strong>
               </div>
             ))}
           </div>
-        </section>
-
-        <section className="card stack">
-          <h2>Needs attention</h2>
-          <p className="muted">Overdue, stale, or high-priority opportunities that should not slip.</p>
-          {attentionItems.length === 0 ? <p className="muted">Nothing needs attention right now.</p> : (
-            <div className="attention-list">
-              {attentionItems.map(({ opportunity, reasons }) => (
-                <article className="attention-item" key={opportunity.id}>
-                  <div className="row"><strong>{opportunity.company}</strong><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div>
-                  <p>{opportunity.role}</p>
-                  <p className="muted">{reasons.join(" · ")}</p>
-                  <Link href={`/opportunities/${opportunity.id}`}>Review</Link>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="card stack">
-          <h2>Pinned Top 5</h2>
-          <p className="muted">Keep the roles that deserve extra effort, warm-intro search, and tighter follow-up here.</p>
-          {pinnedOpportunities.length === 0 ? <p className="muted">No pinned opportunities yet.</p> : pinnedOpportunities.map((opportunity) => (
-            <article className="mini-card" key={opportunity.id}>
-              <div className="row"><strong>{opportunity.role}</strong><span className="badge">{PRIORITY_LABELS[opportunity.priority]}</span></div>
-              <p>{opportunity.company} · {opportunity.role_bucket}</p>
-              <p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>
-              {opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}
-              <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
-            </article>
-          ))}
         </section>
       </div>
 
