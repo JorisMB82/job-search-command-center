@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { buildOpportunityAnalysisPrompt, buildResumeTailoringPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
-import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate, RoleBucket } from "../lib/database.types";
-import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, ROLE_BUCKETS, STATUS_LABELS } from "../lib/database.types";
+import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate } from "../lib/database.types";
+import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "Unknown";
@@ -24,6 +24,12 @@ function formatAge(value: string | null | undefined) {
   const age = daysSince(value);
   if (age === null) return "Unknown age";
   return age === 0 ? "today" : `${age}d ago`;
+}
+
+function uniqueTemplateNames(templates: ResumeTemplate[], currentBucket?: string | null) {
+  const names = templates.map((template) => template.name.trim()).filter(Boolean);
+  if (currentBucket?.trim() && !names.some((name) => name.toLowerCase() === currentBucket.trim().toLowerCase())) names.unshift(currentBucket.trim());
+  return Array.from(new Set(names));
 }
 
 export function OpportunityDetailClient({ id }: { id: string }) {
@@ -63,6 +69,8 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     }
     void load();
   }, [id]);
+
+  const bucketOptions = useMemo(() => uniqueTemplateNames(resumeTemplates, opportunity?.role_bucket), [resumeTemplates, opportunity?.role_bucket]);
 
   const matchingResumeTemplate = useMemo(() => {
     if (!opportunity) return null;
@@ -160,7 +168,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         <div className="filter-grid">
           <label>Status<select value={opportunity.status} onChange={(event) => void updateOpportunity({ status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
           <label>Priority<select value={opportunity.priority} onChange={(event) => void updateOpportunity({ priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
-          <label>Role bucket<select value={opportunity.role_bucket} onChange={(event) => void updateOpportunity({ role_bucket: event.target.value as RoleBucket })}>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
+          <label>Resume template / bucket<select value={opportunity.role_bucket} onChange={(event) => void updateOpportunity({ role_bucket: event.target.value })}>{bucketOptions.length === 0 ? <option value={opportunity.role_bucket}>{opportunity.role_bucket}</option> : bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
           <label>Listing posted date<input type="date" value={opportunity.listing_posted_date ?? ""} onChange={(event) => void updateOpportunity({ listing_posted_date: event.target.value || null })} /></label>
           <label>Next action date<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void updateOpportunity({ next_action_date: event.target.value || null })} /></label>
           <label className="checkbox-row"><input type="checkbox" checked={opportunity.is_pinned} onChange={(event) => void updateOpportunity({ is_pinned: event.target.checked })} /> Pin as top opportunity</label>
@@ -175,7 +183,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         <article className="card stack"><div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div><p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the full prompt.</p><textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." /></article>
       </section>
 
-      <section className="card stack"><div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>{matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</p> : <p className="error">No matching resume template found for this bucket. Add resume text under the Resume Templates section using the same bucket name.</p>}{matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}{resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}{resumePrompt ? <pre>{resumePrompt}</pre> : null}</section>
+      <section className="card stack"><div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>{matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</p> : <p className="error">No matching resume template found for this bucket. Select one of the saved resume templates above or add resume text under the Resume Templates section.</p>}{matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}{resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}{resumePrompt ? <pre>{resumePrompt}</pre> : null}</section>
       <section className="card stack"><div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div><p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>{shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}<pre>{shortPrompt}</pre></section>
       <section className="card stack"><div className="row"><h2>Full ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}>Copy full prompt</button></div><p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>{fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}<pre>{fullPrompt}</pre></section>
       <section className="card stack"><h2>Job description</h2><p>{opportunity.job_description}</p></section>
