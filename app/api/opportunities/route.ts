@@ -1,6 +1,25 @@
 import { NextResponse } from "next/server";
-import type { OpportunityInsert } from "../../../lib/database.types";
+import type { OpportunityInsert, OpportunityPriority, OpportunityStatus, RoleBucket } from "../../../lib/database.types";
+import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, ROLE_BUCKETS } from "../../../lib/database.types";
 import { getServerSupabaseClient } from "../../../lib/supabase";
+
+function isRoleBucket(value: unknown): value is RoleBucket {
+  return typeof value === "string" && (ROLE_BUCKETS as readonly string[]).includes(value);
+}
+
+function isPriority(value: unknown): value is OpportunityPriority {
+  return typeof value === "string" && (OPPORTUNITY_PRIORITIES as readonly string[]).includes(value);
+}
+
+function isStatus(value: unknown): value is OpportunityStatus {
+  return typeof value === "string" && (OPPORTUNITY_STATUSES as readonly string[]).includes(value);
+}
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
 
 export async function GET() {
   const supabase = getServerSupabaseClient();
@@ -25,11 +44,17 @@ export async function POST(request: Request) {
   const insert: OpportunityInsert = {
     company: body.company,
     role: body.role,
-    location: body.location ?? null,
-    url: body.url ?? null,
-    status: body.status ?? "new",
+    location: normalizeText(body.location),
+    url: normalizeText(body.url),
+    status: isStatus(body.status) ? body.status : "new",
     job_description: body.job_description,
-    notes: body.notes ?? null,
+    notes: normalizeText(body.notes),
+    role_bucket: isRoleBucket(body.role_bucket) ? body.role_bucket : "General Strategy & Operations",
+    priority: isPriority(body.priority) ? body.priority : "medium",
+    is_pinned: Boolean(body.is_pinned),
+    next_action_date: normalizeText(body.next_action_date),
+    network_notes: normalizeText(body.network_notes),
+    source: normalizeText(body.source),
   };
   const { data, error } = await supabase.from("opportunities").insert(insert).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
