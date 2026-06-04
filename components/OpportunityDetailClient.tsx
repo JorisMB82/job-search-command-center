@@ -1,39 +1,61 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { buildOpportunityAnalysisPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
-import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, RoleBucket } from "../lib/database.types";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { buildOpportunityAnalysisPrompt, buildResumeTailoringPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
+import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate, RoleBucket } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, ROLE_BUCKETS, STATUS_LABELS } from "../lib/database.types";
 
 export function OpportunityDetailClient({ id }: { id: string }) {
+  const router = useRouter();
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
+  const [resumeTemplates, setResumeTemplates] = useState<ResumeTemplate[]>([]);
   const [draft, setDraft] = useState<OutreachDraftInsert>({ opportunity_id: id, recipient: "", channel: "email", subject: "", body: "" });
   const [shortPromptCopied, setShortPromptCopied] = useState(false);
   const [fullPromptCopied, setFullPromptCopied] = useState(false);
+  const [resumePromptCopied, setResumePromptCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [prepNotes, setPrepNotes] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     async function load() {
-      const response = await fetch(`/api/opportunities/${id}`);
-      const payload = (await response.json()) as { data?: Opportunity; error?: string };
-      if (!response.ok || payload.error) setMessage(payload.error ?? "Could not load opportunity.");
+      const [opportunityResponse, templatesResponse] = await Promise.all([
+        fetch(`/api/opportunities/${id}`),
+        fetch("/api/resume-templates"),
+      ]);
+      const opportunityPayload = (await opportunityResponse.json()) as { data?: Opportunity; error?: string };
+      const templatesPayload = (await templatesResponse.json()) as { data?: ResumeTemplate[]; error?: string };
+
+      if (!opportunityResponse.ok || opportunityPayload.error) setMessage(opportunityPayload.error ?? "Could not load opportunity.");
       else {
-        setOpportunity(payload.data ?? null);
-        setPrepNotes(payload.data?.notes ?? "");
+        setOpportunity(opportunityPayload.data ?? null);
+        setPrepNotes(opportunityPayload.data?.notes ?? "");
       }
+
+      if (!templatesResponse.ok || templatesPayload.error) setMessage(templatesPayload.error ?? "Could not load resume templates.");
+      else setResumeTemplates(templatesPayload.data ?? []);
     }
     void load();
   }, [id]);
 
+  const matchingResumeTemplate = useMemo(() => {
+    if (!opportunity) return null;
+    const exact = resumeTemplates.find((template) => template.name.trim().toLowerCase() === opportunity.role_bucket.trim().toLowerCase());
+    if (exact) return exact;
+    return resumeTemplates.find((template) => template.name.toLowerCase().includes(opportunity.role_bucket.toLowerCase())) ?? null;
+  }, [opportunity, resumeTemplates]);
+
   const shortPrompt = opportunity ? buildShortOpportunityAnalysisPrompt(opportunity) : "";
   const fullPrompt = opportunity ? buildOpportunityAnalysisPrompt(opportunity) : "";
+  const resumePrompt = opportunity && matchingResumeTemplate ? buildResumeTailoringPrompt(opportunity, matchingResumeTemplate) : "";
 
   async function copyShortPrompt() {
     if (!shortPrompt || typeof navigator === "undefined") return;
     await navigator.clipboard.writeText(shortPrompt);
     setShortPromptCopied(true);
     setFullPromptCopied(false);
+    setResumePromptCopied(false);
   }
 
   async function copyFullPrompt() {
@@ -41,6 +63,15 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     await navigator.clipboard.writeText(fullPrompt);
     setFullPromptCopied(true);
     setShortPromptCopied(false);
+    setResumePromptCopied(false);
+  }
+
+  async function copyResumePrompt() {
+    if (!resumePrompt || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(resumePrompt);
+    setResumePromptCopied(true);
+    setShortPromptCopied(false);
+    setFullPromptCopied(false);
   }
 
   async function updateOpportunity(update: OpportunityUpdate) {
@@ -61,6 +92,17 @@ export function OpportunityDetailClient({ id }: { id: string }) {
 
   async function savePrepNotes() {
     await updateOpportunity({ notes: prepNotes });
+  }
+
+  async function deleteOpportunity() {
+    const response = await fetch(`/api/opportunities/${id}`, { method: "DELETE" });
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok || payload.error) {
+      setMessage(payload.error ?? "Could not delete opportunity.");
+      return;
+    }
+    router.push("/");
+    router.refresh();
   }
 
   async function saveDraft(event: FormEvent<HTMLFormElement>) {
@@ -102,13 +144,25 @@ export function OpportunityDetailClient({ id }: { id: string }) {
 
       <section className="card stack">
         <div className="row"><h2>Prep / Analysis Notes</h2><button className="secondary" type="button" onClick={() => void savePrepNotes()}>Save prep notes</button></div>
-        <p className="muted">Paste the ChatGPT interview-prep brief or your call notes here so everything for this opportunity stays in one place.</p>
-        <textarea className="prep-notes" value={prepNotes} onChange={(event) => setPrepNotes(event.target.value)} placeholder="Paste the INTERVIEW PREP BRIEF here after running the short ChatGPT prompt." />
+        <p className="muted">Paste the ChatGPT interview-prep brief, resume tailoring brief, or your call notes here so everything for this opportunity stays in one place.</p>
+        <textarea className="prep-notes" value={prepNotes} onChange={(event) => setPrepNotes(event.target.value)} placeholder="Paste the INTERVIEW PREP BRIEF or RESUME TAILORING BRIEF here after running the prompts below." />
+      </section>
+
+      <section className="card stack">
+        <div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>
+        {matchingResumeTemplate ? (
+          <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Prep / Analysis Notes.</p>
+        ) : (
+          <p className="error">No matching resume template found for this bucket. Add resume text under the Resume Templates section using the same bucket name.</p>
+        )}
+        {matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}
+        {resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Prep / Analysis Notes above.</p> : null}
+        {resumePrompt ? <pre>{resumePrompt}</pre> : null}
       </section>
 
       <section className="card stack">
         <div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div>
-        <p className="muted">Recommended for normal use. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>
+        <p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>
         {shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Prep / Analysis Notes above.</p> : null}
         <pre>{shortPrompt}</pre>
       </section>
@@ -135,6 +189,19 @@ export function OpportunityDetailClient({ id }: { id: string }) {
           <label>Body<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} required /></label>
           <button type="submit">Save draft</button>
         </form>
+      </section>
+
+      <section className="card stack">
+        <h2>Delete opportunity</h2>
+        <p className="muted">Use delete only for duplicates, test entries, or mistakes. For real opportunities, prefer changing status to Closed / Archived.</p>
+        {!confirmDelete ? (
+          <button className="danger" type="button" onClick={() => setConfirmDelete(true)}>Delete opportunity</button>
+        ) : (
+          <div className="row">
+            <button className="danger" type="button" onClick={() => void deleteOpportunity()}>Confirm delete permanently</button>
+            <button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
+          </div>
+        )}
       </section>
     </>
   );
