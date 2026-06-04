@@ -103,6 +103,18 @@ function detectKeywords(jobDescription: string): string {
   return found.length ? Array.from(new Set(found)).join(", ") : "No obvious keywords detected automatically.";
 }
 
+function notesForPrompt(opportunity: Opportunity): string {
+  const parts = [
+    ["Interview prep notes", opportunity.interview_prep_notes],
+    ["Resume tailoring notes", opportunity.resume_tailoring_notes],
+    ["General / call notes", opportunity.general_notes ?? opportunity.notes],
+    ["Legacy notes", opportunity.notes],
+  ].filter(([, value]) => typeof value === "string" && value.trim().length > 0);
+
+  if (!parts.length) return "None yet";
+  return parts.map(([label, value]) => `${label}:\n${value}`).join("\n\n");
+}
+
 export function buildShortOpportunityAnalysisPrompt(opportunity: Opportunity): string {
   const essentialDescription = buildEssentialDescription(opportunity.job_description);
   const detectedKeywords = detectKeywords(opportunity.job_description);
@@ -129,10 +141,10 @@ Essential job description excerpt:
 ${essentialDescription}
 ${isExcerpt ? "\n\nNote: This is an excerpt. The full job description is saved in the app." : ""}
 
-My existing notes:
-${opportunity.notes ?? "None yet"}
+My existing app notes:
+${notesForPrompt(opportunity)}
 
-Please return the answer in this exact structure so I can paste it back into the app:
+Please return the answer in this exact structure so I can paste it into the Interview Prep Notes box:
 
 INTERVIEW PREP BRIEF — ${opportunity.company} / ${opportunity.role}
 
@@ -192,10 +204,10 @@ ${resumeTemplate.name}
 Resume text:
 ${resumeContent}
 
-Existing opportunity notes / prep notes:
-${opportunity.notes ?? "None yet"}
+Existing app notes:
+${notesForPrompt(opportunity)}
 
-Please return a concise RESUME TAILORING BRIEF in this exact structure:
+Please return a concise RESUME TAILORING BRIEF in this exact structure so I can paste it into the Resume Tailoring Notes box:
 
 RESUME TAILORING BRIEF — ${opportunity.company} / ${opportunity.role}
 
@@ -239,10 +251,10 @@ Status: ${opportunity.status}
 Job description:
 ${opportunity.job_description}
 
-My notes:
-${opportunity.notes ?? "None yet"}
+My app notes:
+${notesForPrompt(opportunity)}
 
-Please return:
+Please return a concise GENERAL OPPORTUNITY ANALYSIS that I can paste into General / Call Notes:
 1. A concise opportunity summary.
 2. Top requirements and keywords.
 3. Likely hiring-manager priorities.
