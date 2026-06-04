@@ -27,6 +27,7 @@ const emptyDraft: OpportunityInsert = {
 
 const ACTIVE_PIPELINE_STATUSES: OpportunityStatus[] = ["new", "selected", "researching", "applied", "outreach_drafted", "outreach_sent", "follow_up_due", "interviewing", "offer"];
 const CLOSED_STATUSES: OpportunityStatus[] = ["closed", "rejected"];
+const APPLICATION_PROGRESS_STATUSES: OpportunityStatus[] = ["applied", "outreach_drafted", "outreach_sent", "follow_up_due", "interviewing", "offer"];
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -72,6 +73,19 @@ function matchesSearch(opportunity: Opportunity, searchTerm: string) {
   return searchable.includes(query);
 }
 
+function getAttentionReasons(opportunity: Opportunity, today: string) {
+  const reasons: string[] = [];
+  if (CLOSED_STATUSES.includes(opportunity.status)) return reasons;
+
+  if (opportunity.next_action_date && opportunity.next_action_date <= today) reasons.push(`Next action due ${opportunity.next_action_date}`);
+  if (opportunity.priority === "high" && !opportunity.next_action_date) reasons.push("High priority with no next action date");
+  if (opportunity.priority === "high" && !opportunity.is_pinned) reasons.push("High priority but not pinned");
+  if (["new", "selected", "researching"].includes(opportunity.status) && daysSince(opportunity.created_at) >= 7) reasons.push(`Saved ${daysSince(opportunity.created_at)} days ago and still early-stage`);
+  if (opportunity.listing_posted_date && daysSince(opportunity.listing_posted_date) >= 30 && !APPLICATION_PROGRESS_STATUSES.includes(opportunity.status)) reasons.push(`Listing posted ${daysSince(opportunity.listing_posted_date)} days ago`);
+  if (daysSince(opportunity.updated_at) >= 7) reasons.push(`No update in ${daysSince(opportunity.updated_at)} days`);
+  return reasons;
+}
+
 function Bar({ label, value, max }: { label: string; value: number; max: number }) {
   const width = max > 0 ? Math.max(8, Math.round((value / max) * 100)) : 0;
   return <div className="bar-row"><div className="bar-label"><span>{label}</span><strong>{value}</strong></div><div className="bar-track"><div className="bar-fill" style={{ width: `${width}%` }} /></div></div>;
@@ -91,6 +105,7 @@ export function DashboardClient() {
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
   const [priorityFilter, setPriorityFilter] = useState<OpportunityPriority | "all">("all");
   const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
   async function loadOpportunities() {
@@ -150,6 +165,15 @@ export function DashboardClient() {
     setOpportunities((current) => current.map((opportunity) => opportunity.id === id ? payload.data as Opportunity : opportunity));
   }
 
+  function clearFilters() {
+    setBucketFilter("all");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setPinnedOnly(false);
+    setAttentionOnly(false);
+    setSearchTerm("");
+  }
+
   const today = todayIso();
   const activeOpportunities = opportunities.filter((opportunity) => !CLOSED_STATUSES.includes(opportunity.status));
 
@@ -166,12 +190,7 @@ export function DashboardClient() {
   const pinnedOpportunities = opportunities.filter((opportunity) => opportunity.is_pinned).slice(0, 5);
 
   const attentionItems = activeOpportunities.map((opportunity) => {
-    const reasons: string[] = [];
-    if (opportunity.next_action_date && opportunity.next_action_date <= today) reasons.push(`Next action due ${opportunity.next_action_date}`);
-    if (opportunity.priority === "high" && !opportunity.is_pinned) reasons.push("High priority but not pinned");
-    if (["new", "selected", "researching"].includes(opportunity.status) && daysSince(opportunity.created_at) >= 7) reasons.push(`Saved ${daysSince(opportunity.created_at)} days ago and still early-stage`);
-    if (opportunity.listing_posted_date && daysSince(opportunity.listing_posted_date) >= 30 && !["applied", "outreach_sent", "follow_up_due", "interviewing", "offer"].includes(opportunity.status)) reasons.push(`Listing posted ${daysSince(opportunity.listing_posted_date)} days ago`);
-    if (daysSince(opportunity.updated_at) >= 7) reasons.push(`No update in ${daysSince(opportunity.updated_at)} days`);
+    const reasons = getAttentionReasons(opportunity, today);
     return reasons.length ? { opportunity, reasons } : null;
   }).filter((item): item is { opportunity: Opportunity; reasons: string[] } => Boolean(item)).slice(0, 6);
 
@@ -187,6 +206,7 @@ export function DashboardClient() {
     if (statusFilter !== "all" && opportunity.status !== statusFilter) return false;
     if (priorityFilter !== "all" && opportunity.priority !== priorityFilter) return false;
     if (pinnedOnly && !opportunity.is_pinned) return false;
+    if (attentionOnly && getAttentionReasons(opportunity, today).length === 0) return false;
     return true;
   });
 
@@ -245,9 +265,27 @@ export function DashboardClient() {
         </section>
 
         <section className="card stack opportunities-panel">
-          <div className="opportunities-search-box"><h2>Opportunities</h2><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Bucket<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value as RoleBucket | "all")}><option value="all">All buckets</option>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label></div><p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p></div>
+          <div className="opportunities-search-box"><h2>Opportunities</h2><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Bucket<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value as RoleBucket | "all")}><option value="all">All buckets</option>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label><label className="checkbox-row"><input type="checkbox" checked={attentionOnly} onChange={(event) => setAttentionOnly(event.target.checked)} /> Needs attention only</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p></div>
           <div className="opportunities-scroll" aria-label="Scrollable opportunities list">
-            {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => <article className="card opportunity-card" key={opportunity.id}><div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div><p>{opportunity.company}{opportunity.location ? ` · ${opportunity.location}` : ""}</p><p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p><p className="muted">{opportunity.role_bucket} · {PRIORITY_LABELS[opportunity.priority]} priority{opportunity.source ? ` · ${opportunity.source}` : ""}</p><div className="row"><select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select><select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select><button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button><Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></div></article>)}
+            {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => {
+              const reasons = getAttentionReasons(opportunity, today);
+              return (
+                <article className="card opportunity-card" key={opportunity.id}>
+                  <div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div>
+                  <p>{opportunity.company}{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
+                  <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p>
+                  <p className="muted">{opportunity.role_bucket} · {PRIORITY_LABELS[opportunity.priority]} priority{opportunity.source ? ` · ${opportunity.source}` : ""}</p>
+                  {reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}
+                  <div className="card-control-grid">
+                    <label>Status<select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+                    <label>Priority<select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+                    <label>Next action<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void patchOpportunity(opportunity.id, { next_action_date: event.target.value || null })} /></label>
+                    <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
+                    <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       </div>
