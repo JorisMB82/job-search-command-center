@@ -6,18 +6,18 @@ export default function HelpPage() {
       <AppHeader />
       <main className="stack help-page">
         <div>
-          <h1>Help / Workflow Guide</h1>
+          <h1>Help</h1>
           <p className="muted">Use this page when you have not used the app for a few days and need to remember the process.</p>
         </div>
 
         <section className="card stack">
           <h2>The basic logic</h2>
-          <p>This app is your private job-search command center. It stores the opportunity, job description, role bucket, resume template, prep notes, network notes, status, and next action. ChatGPT is used manually as the analysis engine.</p>
+          <p>This app is your private job-search command center. It stores the opportunity, job description, role bucket, resume template, interview prep notes, resume tailoring notes, general call notes, network notes, status, and next action. ChatGPT is used manually as the analysis engine.</p>
           <div className="help-flow">
-            <div><strong>App stores</strong><span>Opportunity details, job post, role bucket, resume template, notes, status, next action.</span></div>
+            <div><strong>App stores</strong><span>Opportunity details, job post, role bucket, resume template, split notes, status, next action.</span></div>
             <div><strong>App generates</strong><span>Interview prep prompt, resume tailoring prompt, full analysis prompt.</span></div>
-            <div><strong>ChatGPT produces</strong><span>Interview Prep Brief, Resume Tailoring Brief, follow-up draft.</span></div>
-            <div><strong>You paste back</strong><span>Useful output goes into Prep / Analysis Notes.</span></div>
+            <div><strong>ChatGPT produces</strong><span>Interview Prep Brief, Resume Tailoring Brief, general opportunity analysis, follow-up draft.</span></div>
+            <div><strong>You paste back</strong><span>Each useful output goes into its matching notes box.</span></div>
           </div>
         </section>
 
@@ -30,8 +30,8 @@ export default function HelpPage() {
             <li>Click <strong>Copy short prompt</strong>.</li>
             <li>Paste the prompt into ChatGPT.</li>
             <li>Copy ChatGPT’s Interview Prep Brief.</li>
-            <li>Paste it into <strong>Prep / Analysis Notes</strong>.</li>
-            <li>Click <strong>Save prep notes</strong>.</li>
+            <li>Paste it into <strong>Interview Prep Notes</strong>.</li>
+            <li>Click <strong>Save interview notes</strong>.</li>
           </ol>
         </section>
 
@@ -45,9 +45,31 @@ export default function HelpPage() {
             <li>Click <strong>Copy resume prompt</strong>.</li>
             <li>Paste the prompt into ChatGPT.</li>
             <li>Copy the Resume Tailoring Brief.</li>
-            <li>Paste it into <strong>Prep / Analysis Notes</strong>.</li>
+            <li>Paste it into <strong>Resume Tailoring Notes</strong>.</li>
+            <li>Click <strong>Save resume notes</strong>.</li>
             <li>Use the brief to manually edit your resume before applying.</li>
           </ol>
+        </section>
+
+        <section className="card stack">
+          <h2>Full prompt / call notes workflow</h2>
+          <ol className="help-steps">
+            <li>Use the <strong>Full ChatGPT prompt</strong> only when the short prompt is too thin or the opportunity is very important.</li>
+            <li>Paste the full prompt into ChatGPT.</li>
+            <li>Copy the useful output, call recap, or follow-up context.</li>
+            <li>Paste it into <strong>General / Call Notes</strong>.</li>
+            <li>Click <strong>Save general notes</strong>.</li>
+          </ol>
+        </section>
+
+        <section className="card stack">
+          <h2>Where each ChatGPT output goes</h2>
+          <div className="help-flow">
+            <div><strong>Short prompt</strong><span>Paste output into Interview Prep Notes.</span></div>
+            <div><strong>Resume prompt</strong><span>Paste output into Resume Tailoring Notes.</span></div>
+            <div><strong>Full prompt</strong><span>Paste useful output into General / Call Notes.</span></div>
+            <div><strong>Manual call recap</strong><span>Paste or type it into General / Call Notes.</span></div>
+          </div>
         </section>
 
         <section className="card stack">
@@ -89,7 +111,11 @@ export default function HelpPage() {
             </article>
             <article className="mini-card">
               <strong>Where do I store ChatGPT output?</strong>
-              <p>Paste useful outputs into <strong>Prep / Analysis Notes</strong> inside the opportunity detail page.</p>
+              <p>Use the three separate paste-back boxes: <strong>Interview Prep Notes</strong>, <strong>Resume Tailoring Notes</strong>, and <strong>General / Call Notes</strong>.</p>
+            </article>
+            <article className="mini-card">
+              <strong>Do I need to run all three prompts?</strong>
+              <p>No. Usually run the short prompt for interview prep and the resume prompt before applying. Use the full prompt only for important roles or when you want broader analysis.</p>
             </article>
             <article className="mini-card">
               <strong>Do I need to rewrite the prompt manually?</strong>
@@ -101,7 +127,7 @@ export default function HelpPage() {
             </article>
             <article className="mini-card">
               <strong>What should I do before applying?</strong>
-              <p>Confirm the bucket, copy the resume prompt, get the Resume Tailoring Brief, manually edit the resume, save the brief in notes, then apply manually.</p>
+              <p>Confirm the bucket, copy the resume prompt, get the Resume Tailoring Brief, manually edit the resume, save the brief in Resume Tailoring Notes, then apply manually.</p>
             </article>
           </div>
         </section>
