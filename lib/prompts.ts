@@ -1,6 +1,7 @@
-import type { Opportunity } from "./database.types";
+import type { Opportunity, ResumeTemplate } from "./database.types";
 
 const MAX_ESSENTIAL_DESCRIPTION_CHARS = 3_800;
+const MAX_RESUME_CHARS = 8_000;
 
 const IMPORTANT_SECTION_HEADERS = [
   "Overall Purpose",
@@ -67,9 +68,9 @@ function normalizeWhitespace(value: string): string {
     .trim();
 }
 
-function truncate(value: string, maxChars: number): string {
+function truncate(value: string, maxChars: number, label = "source text"): string {
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars).trim()}\n\n[Excerpt truncated. The full job description is saved in the app.]`;
+  return `${value.slice(0, maxChars).trim()}\n\n[Excerpt truncated. The full ${label} is saved in the app.]`;
 }
 
 function findSection(text: string, header: string): string | null {
@@ -93,7 +94,7 @@ function buildEssentialDescription(jobDescription: string): string {
     .filter((section): section is string => Boolean(section));
 
   const candidate = sections.length ? sections.join("\n\n") : normalized;
-  return truncate(candidate, MAX_ESSENTIAL_DESCRIPTION_CHARS);
+  return truncate(candidate, MAX_ESSENTIAL_DESCRIPTION_CHARS, "job description");
 }
 
 function detectKeywords(jobDescription: string): string {
@@ -161,6 +162,69 @@ INTERVIEW PREP BRIEF — ${opportunity.company} / ${opportunity.role}
 
 9. NEXT ACTION
 - One specific next action I should take in the app after the call.`;
+}
+
+export function buildResumeTailoringPrompt(opportunity: Opportunity, resumeTemplate: ResumeTemplate): string {
+  const essentialDescription = buildEssentialDescription(opportunity.job_description);
+  const detectedKeywords = detectKeywords(opportunity.job_description);
+  const resumeContent = truncate(normalizeWhitespace(resumeTemplate.content), MAX_RESUME_CHARS, "resume template");
+
+  return `You are my resume tailoring partner. Compare this job opportunity against the selected resume template and return practical, manual resume-editing guidance. Do not invent experience I do not have. Do not apply or send anything on my behalf.
+
+Opportunity:
+Company: ${opportunity.company}
+Role: ${opportunity.role}
+Location: ${opportunity.location ?? "Not listed"}
+URL: ${opportunity.url ?? "Not provided"}
+Role bucket: ${opportunity.role_bucket}
+Priority: ${opportunity.priority}
+Status: ${opportunity.status}
+
+Detected job keywords:
+${detectedKeywords}
+
+Job description excerpt:
+${essentialDescription}
+
+Selected resume template:
+${resumeTemplate.name}
+
+Resume text:
+${resumeContent}
+
+Existing opportunity notes / prep notes:
+${opportunity.notes ?? "None yet"}
+
+Please return a concise RESUME TAILORING BRIEF in this exact structure:
+
+RESUME TAILORING BRIEF — ${opportunity.company} / ${opportunity.role}
+
+1. BEST RESUME VERSION
+- Confirm whether this is the right resume template for the role, and explain briefly.
+
+2. FIT SCORE
+- Score from 1-100 and one short explanation.
+
+3. 5 POINTS TO ADD OR EMPHASIZE
+- Five specific themes, keywords, or achievements from the job description that should be added or made more visible in the resume.
+
+4. 5 POINTS TO REDUCE OR REMOVE
+- Five items that are less relevant for this role and can be shortened, moved down, or removed to make room.
+
+5. SUMMARY / PROFILE EDIT
+- Suggest a revised resume summary/profile paragraph using only truthful positioning.
+
+6. EXPERIENCE BULLET EDITS
+- Suggest 6-10 bullet edits or bullet themes, grouped by likely resume section or prior role.
+
+7. KEYWORDS TO INCLUDE NATURALLY
+- List the highest-value keywords to include without keyword stuffing.
+
+8. APPLICATION POSITIONING
+- A short positioning paragraph I can keep in mind when submitting the application.
+
+9. CAUTION
+- Any claims I should avoid because they are not clearly supported by the resume text.`;
 }
 
 export function buildOpportunityAnalysisPrompt(opportunity: Opportunity): string {
