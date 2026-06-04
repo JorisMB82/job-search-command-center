@@ -47,16 +47,19 @@ export type Database = {
         Row: Opportunity;
         Insert: Partial<Pick<Opportunity, "id" | "created_at" | "updated_at">> & OpportunityInsert;
         Update: OpportunityUpdate;
+        Relationships: [];
       };
       outreach_drafts: {
         Row: OutreachDraft;
         Insert: Partial<Pick<OutreachDraft, "id" | "created_at" | "updated_at">> & OutreachDraftInsert;
         Update: Partial<OutreachDraftInsert>;
+        Relationships: [];
       };
       resume_templates: {
         Row: ResumeTemplate;
         Insert: Partial<Pick<ResumeTemplate, "id" | "created_at" | "updated_at">> & ResumeTemplateInsert;
         Update: Partial<ResumeTemplateInsert>;
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
