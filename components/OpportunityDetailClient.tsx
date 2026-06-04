@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { buildOpportunityAnalysisPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
-import type { Opportunity, OutreachDraftInsert } from "../lib/database.types";
+import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, RoleBucket } from "../lib/database.types";
+import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, ROLE_BUCKETS, STATUS_LABELS } from "../lib/database.types";
 
 export function OpportunityDetailClient({ id }: { id: string }) {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
@@ -38,6 +39,21 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     setShortPromptCopied(false);
   }
 
+  async function updateOpportunity(update: OpportunityUpdate) {
+    const response = await fetch(`/api/opportunities/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    });
+    const payload = (await response.json()) as { data?: Opportunity; error?: string };
+    if (!response.ok || payload.error || !payload.data) {
+      setMessage(payload.error ?? "Could not update opportunity.");
+      return;
+    }
+    setOpportunity(payload.data);
+    setMessage("Opportunity updated.");
+  }
+
   async function saveDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
@@ -61,12 +77,21 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   return (
     <>
       <section className="card stack">
-        <div className="row"><h1>{opportunity.role}</h1><span className="badge">{opportunity.status}</span></div>
+        <div className="row"><h1>{opportunity.role}</h1><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
         <p><strong>{opportunity.company}</strong>{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
         {opportunity.url ? <p><a href={opportunity.url} target="_blank" rel="noreferrer">Open source posting</a></p> : null}
+        <div className="filter-grid">
+          <label>Status<select value={opportunity.status} onChange={(event) => void updateOpportunity({ status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+          <label>Priority<select value={opportunity.priority} onChange={(event) => void updateOpportunity({ priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+          <label>Role bucket<select value={opportunity.role_bucket} onChange={(event) => void updateOpportunity({ role_bucket: event.target.value as RoleBucket })}>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
+          <label>Next action date<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void updateOpportunity({ next_action_date: event.target.value || null })} /></label>
+          <label className="checkbox-row"><input type="checkbox" checked={opportunity.is_pinned} onChange={(event) => void updateOpportunity({ is_pinned: event.target.checked })} /> Pin as top opportunity</label>
+        </div>
+        <label>Network notes<textarea value={opportunity.network_notes ?? ""} onChange={(event) => setOpportunity({ ...opportunity, network_notes: event.target.value })} onBlur={(event) => void updateOpportunity({ network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
         <h2>Job description</h2>
         <p>{opportunity.job_description}</p>
         {opportunity.notes ? <><h2>Notes</h2><p>{opportunity.notes}</p></> : null}
+        {message ? <p className="muted">{message}</p> : null}
       </section>
 
       <section className="card stack">
@@ -93,7 +118,6 @@ export function OpportunityDetailClient({ id }: { id: string }) {
           <label>Body<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} required /></label>
           <button type="submit">Save draft</button>
         </form>
-        {message ? <p className="muted">{message}</p> : null}
       </section>
     </>
   );
