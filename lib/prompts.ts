@@ -107,15 +107,19 @@ export function buildShortOpportunityAnalysisPrompt(opportunity: Opportunity): s
   const detectedKeywords = detectKeywords(opportunity.job_description);
   const isExcerpt = opportunity.job_description.length > essentialDescription.length;
 
-  return `You are my job-search strategy partner. Analyze this opportunity and help me decide whether and how to position myself. Do not apply, send emails, browse, or take action on my behalf.
+  return `You are my job-search strategy partner. Analyze this opportunity and return one concise, paste-back-ready INTERVIEW PREP BRIEF that I can copy directly into my job-search app notes.
 
-Use a concise, practical answer. Ignore boilerplate benefits, physical requirements, equal-opportunity language, and generic company marketing unless directly relevant to fit, compensation, or interview strategy.
+Do not apply, send emails, browse, or take action on my behalf. Ignore boilerplate benefits, physical requirements, equal-opportunity language, and generic company marketing unless directly relevant to fit, compensation, or interview strategy.
 
 Company: ${opportunity.company}
 Role: ${opportunity.role}
 Location: ${opportunity.location ?? "Not listed"}
 URL: ${opportunity.url ?? "Not provided"}
 Status: ${opportunity.status}
+Role bucket: ${opportunity.role_bucket}
+Priority: ${opportunity.priority}
+Next action date: ${opportunity.next_action_date ?? "Not set"}
+Network notes: ${opportunity.network_notes ?? "None yet"}
 
 Detected keywords:
 ${detectedKeywords}
@@ -124,17 +128,39 @@ Essential job description excerpt:
 ${essentialDescription}
 ${isExcerpt ? "\n\nNote: This is an excerpt. The full job description is saved in the app." : ""}
 
-My notes:
+My existing notes:
 ${opportunity.notes ?? "None yet"}
 
-Please return:
-1. Fit score from 1-100 and whether I should prioritize this opportunity.
-2. Concise opportunity summary.
-3. Top requirements and keywords.
-4. Likely hiring-manager priorities.
-5. Resume tailoring suggestions, including which resume version to use.
-6. Interview prep topics and likely objections about my candidacy.
-7. A safe, manually-sendable outreach draft I can edit before using.`;
+Please return the answer in this exact structure so I can paste it back into the app:
+
+INTERVIEW PREP BRIEF — ${opportunity.company} / ${opportunity.role}
+
+1. ROLE THESIS
+- 2-3 lines on what this role really is and what the company likely needs.
+
+2. MY POSITIONING
+- 3-5 bullets on how I should position my background.
+
+3. WHY I FIT
+- 4-6 bullets connecting my likely strengths to this role.
+
+4. LIKELY CONCERNS / OBJECTIONS
+- 3-5 likely concerns the interviewer may have, with a short response strategy for each.
+
+5. 90-DAY VALUE STORY
+- A practical 30/60/90-day outline I can say out loud.
+
+6. QUESTIONS TO ASK
+- 8-10 sharp questions for the interviewer, prioritized by importance.
+
+7. TALKING POINTS TO REMEMBER
+- 5 concise phrases or points I should keep in front of me during the call.
+
+8. FOLLOW-UP EMAIL DRAFT
+- A short, safe, manually-sendable follow-up email draft I can edit before sending.
+
+9. NEXT ACTION
+- One specific next action I should take in the app after the call.`;
 }
 
 export function buildOpportunityAnalysisPrompt(opportunity: Opportunity): string {
