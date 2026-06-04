@@ -16,8 +16,11 @@ V1 is intentionally lightweight:
 - Create opportunities from a public job-posting URL or pasted job description.
 - Review and manually edit extracted fields before saving.
 - View saved opportunities on the dashboard.
+- Organize opportunities by role bucket, priority, source, status, and next action date.
+- Pin up to five priority opportunities for warm-intro and follow-up focus.
+- View role-bucket volume and status funnel summaries.
 - Open opportunity detail pages.
-- Generate and copy a ChatGPT analysis prompt.
+- Generate and copy short or full ChatGPT analysis prompts.
 - Save outreach drafts without sending them.
 - Manage resume templates.
 - Protect the private app with a simple one-user password gate.
@@ -49,17 +52,19 @@ Notes:
 
 1. Create a Supabase project.
 2. Open the Supabase SQL editor.
-3. Copy the contents of `supabase/migration.sql`.
+3. For a new database, copy the contents of `supabase/migration.sql`.
 4. Run the SQL in the SQL editor.
-5. Copy the project URL into `NEXT_PUBLIC_SUPABASE_URL`.
-6. Copy the public anon key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+5. For an existing V1 database that already ran the first migration, run `supabase/002_dashboard_upgrade.sql` once.
+6. Copy the project URL into `NEXT_PUBLIC_SUPABASE_URL`.
+7. Copy the public anon key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
-The migration creates:
+The migration creates or upgrades:
 
 - `public.opportunities`
 - `public.outreach_drafts`
 - `public.resume_templates`
-- `updated_at` triggers for all three tables
+- dashboard fields on `opportunities`: `role_bucket`, `priority`, `is_pinned`, `next_action_date`, `network_notes`, and `source`
+- `updated_at` triggers and useful dashboard indexes
 
 This V1 app is protected by the app password gate before Supabase calls are made from the browser. It does not require any Supabase service role key.
 
