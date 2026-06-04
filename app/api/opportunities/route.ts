@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import type { OpportunityInsert, OpportunityPriority, OpportunityStatus, RoleBucket } from "../../../lib/database.types";
-import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, ROLE_BUCKETS } from "../../../lib/database.types";
+import type { OpportunityInsert, OpportunityPriority, OpportunityStatus } from "../../../lib/database.types";
+import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES } from "../../../lib/database.types";
 import { getServerSupabaseClient } from "../../../lib/supabase";
-
-function isRoleBucket(value: unknown): value is RoleBucket {
-  return typeof value === "string" && (ROLE_BUCKETS as readonly string[]).includes(value);
-}
 
 function isPriority(value: unknown): value is OpportunityPriority {
   return typeof value === "string" && (OPPORTUNITY_PRIORITIES as readonly string[]).includes(value);
@@ -58,7 +54,7 @@ export async function POST(request: Request) {
     interview_prep_notes: normalizeText(body.interview_prep_notes),
     resume_tailoring_notes: normalizeText(body.resume_tailoring_notes),
     general_notes: normalizeText(body.general_notes),
-    role_bucket: isRoleBucket(body.role_bucket) ? body.role_bucket : "General Strategy & Operations",
+    role_bucket: normalizeText(body.role_bucket) ?? "Neutral Resume",
     priority: isPriority(body.priority) ? body.priority : "medium",
     is_pinned: Boolean(body.is_pinned),
     listing_posted_date: normalizeDate(body.listing_posted_date),
