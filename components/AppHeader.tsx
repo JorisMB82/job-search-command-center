@@ -8,7 +8,7 @@ export function AppHeader() {
         <nav className="nav" aria-label="Primary navigation">
           <Link href="/">Dashboard</Link>
           <Link href="/resumes">Resume templates</Link>
-          <Link href="/help">Help / Workflow</Link>
+          <Link href="/help">Help</Link>
           <form action="/api/logout" method="post">
             <button className="secondary" type="submit">Log out</button>
           </form>
