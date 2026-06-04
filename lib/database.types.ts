@@ -22,11 +22,11 @@ export const OPPORTUNITY_STATUSES = [
   "closed",
 ] as const;
 
-export type RoleBucket = (typeof ROLE_BUCKETS)[number];
+export type RoleBucket = string;
 export type OpportunityPriority = (typeof OPPORTUNITY_PRIORITIES)[number];
 export type OpportunityStatus = (typeof OPPORTUNITY_STATUSES)[number];
 
-export const ROLE_BUCKET_LABELS: Record<RoleBucket, string> = {
+export const ROLE_BUCKET_LABELS: Record<string, string> = {
   "General Strategy & Operations": "General Strategy & Operations",
   "Chief of Staff": "Chief of Staff",
   "Digital Assets / RWA": "Digital Assets / RWA",
