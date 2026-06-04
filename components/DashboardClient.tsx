@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { Opportunity, OpportunityInsert, OpportunityPriority, OpportunityStatus, RoleBucket } from "../lib/database.types";
-import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, ROLE_BUCKETS, STATUS_LABELS } from "../lib/database.types";
+import type { Opportunity, OpportunityInsert, OpportunityPriority, OpportunityStatus, ResumeTemplate } from "../lib/database.types";
+import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
 
 const emptyDraft: OpportunityInsert = {
   company: "",
@@ -16,7 +16,7 @@ const emptyDraft: OpportunityInsert = {
   interview_prep_notes: "",
   resume_tailoring_notes: "",
   general_notes: "",
-  role_bucket: "General Strategy & Operations",
+  role_bucket: "Neutral Resume",
   priority: "medium",
   is_pinned: false,
   listing_posted_date: null,
@@ -57,13 +57,26 @@ function formatPercent(value: number, total: number) {
   return `${Math.round((value / total) * 100)}%`;
 }
 
-function inferRoleBucket(role: string, description: string): RoleBucket {
+function uniqueBucketNames(templates: ResumeTemplate[], opportunities: Opportunity[] = [], currentBucket?: string | null) {
+  const names = [
+    ...templates.map((template) => template.name.trim()).filter(Boolean),
+    ...opportunities.map((opportunity) => opportunity.role_bucket.trim()).filter(Boolean),
+  ];
+  if (currentBucket?.trim()) names.unshift(currentBucket.trim());
+  return Array.from(new Set(names));
+}
+
+function pickBucketByKeywords(role: string, description: string, bucketOptions: string[]): string {
+  const fallback = bucketOptions[0] ?? "Neutral Resume";
   const text = `${role} ${description}`.toLowerCase();
-  if (text.includes("chief of staff") || text.includes("founder's office") || text.includes("founder office") || text.includes("ceo office")) return "Chief of Staff";
-  if (text.includes("token") || text.includes("digital asset") || text.includes("rwa") || text.includes("blockchain") || text.includes("crypto") || text.includes("payments") || text.includes("fintech")) return "Digital Assets / RWA";
-  if (text.includes("venture") || text.includes("startup") || text.includes("incubator") || text.includes("accelerator") || text.includes("operator")) return "Venture Builder / Startup Operator";
-  if (text.includes("partnership") || text.includes("corporate development") || text.includes("corp dev") || text.includes("business development") || text.includes("strategic alliance")) return "Partnerships / Corporate Development";
-  return "General Strategy & Operations";
+  const findBucket = (keywords: string[]) => bucketOptions.find((bucket) => keywords.some((keyword) => bucket.toLowerCase().includes(keyword)));
+
+  if (text.includes("chief of staff") || text.includes("founder's office") || text.includes("founder office") || text.includes("ceo office")) return findBucket(["chief", "staff"]) ?? fallback;
+  if (text.includes("token") || text.includes("digital asset") || text.includes("rwa") || text.includes("blockchain") || text.includes("crypto") || text.includes("payments") || text.includes("fintech")) return findBucket(["digital", "rwa", "asset", "fintech", "crypto", "token"]) ?? fallback;
+  if (text.includes("venture") || text.includes("startup") || text.includes("incubator") || text.includes("accelerator") || text.includes("operator")) return findBucket(["venture", "startup", "operator", "build"]) ?? fallback;
+  if (text.includes("partnership") || text.includes("corporate development") || text.includes("corp dev") || text.includes("business development") || text.includes("strategic alliance")) return findBucket(["partnership", "corporate", "corp", "development", "business"]) ?? fallback;
+  if (text.includes("strategy") || text.includes("operations") || text.includes("business operations")) return findBucket(["strategy", "operations", "ops"]) ?? fallback;
+  return fallback;
 }
 
 function matchesSearch(opportunity: Opportunity, searchTerm: string) {
@@ -97,11 +110,12 @@ function statusCount(opportunities: Opportunity[], status: OpportunityStatus) {
 
 export function DashboardClient() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [resumeTemplates, setResumeTemplates] = useState<ResumeTemplate[]>([]);
   const [draft, setDraft] = useState<OpportunityInsert>(emptyDraft);
   const [sourceUrl, setSourceUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [bucketFilter, setBucketFilter] = useState<RoleBucket | "all">("all");
+  const [bucketFilter, setBucketFilter] = useState<string | "all">("all");
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
   const [priorityFilter, setPriorityFilter] = useState<OpportunityPriority | "all">("all");
   const [pinnedOnly, setPinnedOnly] = useState(false);
@@ -109,13 +123,30 @@ export function DashboardClient() {
   const [searchTerm, setSearchTerm] = useState("");
 
   async function loadOpportunities() {
-    const response = await fetch("/api/opportunities");
-    const payload = (await response.json()) as { data?: Opportunity[]; error?: string };
-    if (!response.ok || payload.error) setMessage(payload.error ?? "Could not load opportunities.");
-    else setOpportunities(payload.data ?? []);
+    const [opportunitiesResponse, templatesResponse] = await Promise.all([
+      fetch("/api/opportunities"),
+      fetch("/api/resume-templates"),
+    ]);
+    const opportunitiesPayload = (await opportunitiesResponse.json()) as { data?: Opportunity[]; error?: string };
+    const templatesPayload = (await templatesResponse.json()) as { data?: ResumeTemplate[]; error?: string };
+
+    if (!opportunitiesResponse.ok || opportunitiesPayload.error) setMessage(opportunitiesPayload.error ?? "Could not load opportunities.");
+    else setOpportunities(opportunitiesPayload.data ?? []);
+
+    if (!templatesResponse.ok || templatesPayload.error) setMessage(templatesPayload.error ?? "Could not load resume templates.");
+    else {
+      const templates = templatesPayload.data ?? [];
+      setResumeTemplates(templates);
+      const templateNames = templates.map((template) => template.name.trim()).filter(Boolean);
+      if (templateNames.length && !templateNames.some((name) => name.toLowerCase() === draft.role_bucket.toLowerCase())) {
+        setDraft((current) => ({ ...current, role_bucket: templateNames[0] }));
+      }
+    }
   }
 
   useEffect(() => { void loadOpportunities(); }, []);
+
+  const bucketOptions = useMemo(() => uniqueBucketNames(resumeTemplates, opportunities, draft.role_bucket), [resumeTemplates, opportunities, draft.role_bucket]);
 
   async function extractFromUrl() {
     setMessage("");
@@ -129,7 +160,7 @@ export function DashboardClient() {
         return;
       }
       const next = { ...draft, ...payload.data, url: sourceUrl };
-      next.role_bucket = inferRoleBucket(next.role, next.job_description);
+      next.role_bucket = pickBucketByKeywords(next.role, next.job_description, bucketOptions);
       setDraft(next);
       setMessage("Extraction complete. Review and edit fields before saving.");
     } catch {
@@ -149,7 +180,7 @@ export function DashboardClient() {
       setMessage(payload.error ?? "Could not save opportunity.");
       return;
     }
-    setDraft(emptyDraft);
+    setDraft({ ...emptyDraft, role_bucket: bucketOptions[0] ?? "Neutral Resume" });
     setSourceUrl("");
     setMessage("Opportunity saved.");
     await loadOpportunities();
@@ -185,7 +216,7 @@ export function DashboardClient() {
     interviews: opportunities.filter((opportunity) => ["interviewing", "offer"].includes(opportunity.status)).length,
   }), [opportunities, today]);
 
-  const bucketCounts = ROLE_BUCKETS.map((bucket) => ({ bucket, count: opportunities.filter((opportunity) => opportunity.role_bucket === bucket).length }));
+  const bucketCounts = bucketOptions.map((bucket) => ({ bucket, count: opportunities.filter((opportunity) => opportunity.role_bucket === bucket).length }));
   const maxBucketCount = Math.max(1, ...bucketCounts.map((item) => item.count));
   const pinnedOpportunities = opportunities.filter((opportunity) => opportunity.is_pinned).slice(0, 5);
 
@@ -234,7 +265,7 @@ export function DashboardClient() {
             {pinnedOpportunities.length === 0 ? <p className="muted">No pinned opportunities yet.</p> : pinnedOpportunities.map((opportunity) => <article className="mini-card" key={opportunity.id}><div className="row"><strong>{opportunity.role}</strong><span className="badge">{PRIORITY_LABELS[opportunity.priority]}</span></div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}
           </section>
 
-          <section className="card stack"><h2>Role bucket map</h2><p className="muted">Shows market volume by target role family. Use traction later to decide where to focus.</p>{bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}</section>
+          <section className="card stack"><h2>Resume template map</h2><p className="muted">Shows market volume by saved resume version. Keep template names aligned with how you want prompts matched.</p>{bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}</section>
         </div>
 
         <section className="card stack funnel-card"><h2>Status funnel</h2><p className="muted">Count and percentage of the total pipeline in each stage.</p><div className="visual-funnel" aria-label="Opportunity status funnel">{funnelStages.map((stage) => <div className="funnel-band" key={stage.status} style={{ width: `${stage.width}%` }}><span className="funnel-label">{stage.label}</span><strong className="funnel-value">{stage.count} · {formatPercent(stage.count, metrics.total)}</strong></div>)}</div></section>
@@ -246,17 +277,17 @@ export function DashboardClient() {
           <label>Source URL (optional)<div className="row"><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://company.example/jobs/123" /><button type="button" disabled={!sourceUrl || loading} onClick={extractFromUrl}>Extract</button></div></label>
           <form className="stack" onSubmit={saveOpportunity}>
             <label>Company<input value={draft.company} onChange={(event) => setDraft({ ...draft, company: event.target.value })} required /></label>
-            <label>Role<input value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value, role_bucket: inferRoleBucket(event.target.value, draft.job_description) })} required /></label>
+            <label>Role<input value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value, role_bucket: pickBucketByKeywords(event.target.value, draft.job_description, bucketOptions) })} required /></label>
             <label>Location<input value={draft.location ?? ""} onChange={(event) => setDraft({ ...draft, location: event.target.value })} /></label>
             <label>URL<input value={draft.url ?? ""} onChange={(event) => setDraft({ ...draft, url: event.target.value })} /></label>
             <label>Source<input value={draft.source ?? ""} onChange={(event) => setDraft({ ...draft, source: event.target.value })} placeholder="Wellfound, LinkedIn, company site, recruiter, referral" /></label>
             <label>Listing posted date<input type="date" value={draft.listing_posted_date ?? ""} onChange={(event) => setDraft({ ...draft, listing_posted_date: event.target.value || null })} /></label>
-            <label>Role bucket<select value={draft.role_bucket} onChange={(event) => setDraft({ ...draft, role_bucket: event.target.value as RoleBucket })}>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
+            <label>Resume template / bucket<select value={draft.role_bucket} onChange={(event) => setDraft({ ...draft, role_bucket: event.target.value })}>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
             <label>Priority<select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
             <label>Status<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
             <label>Next action date<input type="date" value={draft.next_action_date ?? ""} onChange={(event) => setDraft({ ...draft, next_action_date: event.target.value || null })} /></label>
             <label className="checkbox-row"><input type="checkbox" checked={draft.is_pinned} onChange={(event) => setDraft({ ...draft, is_pinned: event.target.checked })} /> Pin as top opportunity</label>
-            <label>Job description<textarea value={draft.job_description} onChange={(event) => setDraft({ ...draft, job_description: event.target.value, role_bucket: inferRoleBucket(draft.role, event.target.value) })} required /></label>
+            <label>Job description<textarea value={draft.job_description} onChange={(event) => setDraft({ ...draft, job_description: event.target.value, role_bucket: pickBucketByKeywords(draft.role, event.target.value, bucketOptions) })} required /></label>
             <label>Network notes<textarea value={draft.network_notes ?? ""} onChange={(event) => setDraft({ ...draft, network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
             <label>General notes<textarea value={draft.general_notes ?? draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, general_notes: event.target.value, notes: event.target.value })} placeholder="Manual call notes, recruiter context, compensation notes, or initial observations." /></label>
             <button type="submit">Save opportunity</button>
@@ -265,7 +296,7 @@ export function DashboardClient() {
         </section>
 
         <section className="card stack opportunities-panel">
-          <div className="opportunities-search-box"><h2>Opportunities</h2><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Bucket<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value as RoleBucket | "all")}><option value="all">All buckets</option>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label><label className="checkbox-row"><input type="checkbox" checked={attentionOnly} onChange={(event) => setAttentionOnly(event.target.checked)} /> Needs attention only</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p></div>
+          <div className="opportunities-search-box"><h2>Opportunities</h2><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Resume template<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value)}><option value="all">All templates</option>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label><label className="checkbox-row"><input type="checkbox" checked={attentionOnly} onChange={(event) => setAttentionOnly(event.target.checked)} /> Needs attention only</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p></div>
           <div className="opportunities-scroll" aria-label="Scrollable opportunities list">
             {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => {
               const reasons = getAttentionReasons(opportunity, today);
