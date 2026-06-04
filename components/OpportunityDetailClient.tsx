@@ -1,13 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { buildOpportunityAnalysisPrompt } from "../lib/prompts";
+import { buildOpportunityAnalysisPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
 import type { Opportunity, OutreachDraftInsert } from "../lib/database.types";
 
 export function OpportunityDetailClient({ id }: { id: string }) {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [draft, setDraft] = useState<OutreachDraftInsert>({ opportunity_id: id, recipient: "", channel: "email", subject: "", body: "" });
-  const [promptCopied, setPromptCopied] = useState(false);
+  const [shortPromptCopied, setShortPromptCopied] = useState(false);
+  const [fullPromptCopied, setFullPromptCopied] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -20,12 +21,21 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     void load();
   }, [id]);
 
-  const prompt = opportunity ? buildOpportunityAnalysisPrompt(opportunity) : "";
+  const shortPrompt = opportunity ? buildShortOpportunityAnalysisPrompt(opportunity) : "";
+  const fullPrompt = opportunity ? buildOpportunityAnalysisPrompt(opportunity) : "";
 
-  async function copyPrompt() {
-    if (!prompt || typeof navigator === "undefined") return;
-    await navigator.clipboard.writeText(prompt);
-    setPromptCopied(true);
+  async function copyShortPrompt() {
+    if (!shortPrompt || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(shortPrompt);
+    setShortPromptCopied(true);
+    setFullPromptCopied(false);
+  }
+
+  async function copyFullPrompt() {
+    if (!fullPrompt || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(fullPrompt);
+    setFullPromptCopied(true);
+    setShortPromptCopied(false);
   }
 
   async function saveDraft(event: FormEvent<HTMLFormElement>) {
@@ -60,9 +70,17 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       </section>
 
       <section className="card stack">
-        <div className="row"><h2>ChatGPT analysis prompt</h2><button className="secondary" type="button" onClick={copyPrompt}>Copy prompt</button></div>
-        {promptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually.</p> : null}
-        <pre>{prompt}</pre>
+        <div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div>
+        <p className="muted">Recommended for normal use. Keeps the full job description saved, but sends ChatGPT only the essential sections and keywords.</p>
+        {shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually.</p> : null}
+        <pre>{shortPrompt}</pre>
+      </section>
+
+      <section className="card stack">
+        <div className="row"><h2>Full ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}>Copy full prompt</button></div>
+        <p className="muted">Use only when you want the entire saved job description included.</p>
+        {fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually.</p> : null}
+        <pre>{fullPrompt}</pre>
       </section>
 
       <section className="card stack">
