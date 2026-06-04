@@ -21,6 +21,12 @@ function normalizeText(value: unknown): string | null {
   return trimmed || null;
 }
 
+function normalizeDate(value: unknown): string | null {
+  const text = normalizeText(value);
+  if (!text) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
 export async function GET() {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
@@ -55,7 +61,8 @@ export async function POST(request: Request) {
     role_bucket: isRoleBucket(body.role_bucket) ? body.role_bucket : "General Strategy & Operations",
     priority: isPriority(body.priority) ? body.priority : "medium",
     is_pinned: Boolean(body.is_pinned),
-    next_action_date: normalizeText(body.next_action_date),
+    listing_posted_date: normalizeDate(body.listing_posted_date),
+    next_action_date: normalizeDate(body.next_action_date),
     network_notes: normalizeText(body.network_notes),
     source: normalizeText(body.source),
   };
