@@ -293,8 +293,8 @@ export function DashboardClient() {
         </section>
       </div>
 
-      <div className="grid">
-        <section className="card stack">
+      <div className="grid opportunity-workspace">
+        <section className="card stack create-opportunity-panel">
           <h2>Create opportunity</h2>
           <label>
             Source URL (optional)
@@ -334,29 +334,34 @@ export function DashboardClient() {
           {message ? <p className={message.includes("not") || message.includes("Could") || message.includes("error") ? "error" : "muted"}>{message}</p> : null}
         </section>
 
-        <section className="card stack">
-          <h2>Opportunities</h2>
-          <label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, notes, contact path..." /></label>
-          <div className="filter-grid">
-            <label>Bucket<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value as RoleBucket | "all")}><option value="all">All buckets</option>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
-            <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
-            <label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
-            <label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label>
+        <section className="card stack opportunities-panel">
+          <div className="opportunities-search-box">
+            <h2>Opportunities</h2>
+            <label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, notes, contact path..." /></label>
+            <div className="filter-grid">
+              <label>Bucket<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value as RoleBucket | "all")}><option value="all">All buckets</option>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
+              <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+              <label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+              <label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label>
+            </div>
+            <p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p>
           </div>
-          <p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p>
-          {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => (
-            <article className="card" key={opportunity.id}>
-              <div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
-              <p>{opportunity.company}{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
-              <p className="muted">{opportunity.role_bucket} · {PRIORITY_LABELS[opportunity.priority]} priority{opportunity.source ? ` · ${opportunity.source}` : ""}</p>
-              <div className="row">
-                <select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
-                <select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select>
-                <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
-                <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
-              </div>
-            </article>
-          ))}
+
+          <div className="opportunities-scroll" aria-label="Scrollable opportunities list">
+            {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => (
+              <article className="card opportunity-card" key={opportunity.id}>
+                <div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
+                <p>{opportunity.company}{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
+                <p className="muted">{opportunity.role_bucket} · {PRIORITY_LABELS[opportunity.priority]} priority{opportunity.source ? ` · ${opportunity.source}` : ""}</p>
+                <div className="row">
+                  <select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
+                  <select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select>
+                  <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
+                  <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       </div>
     </div>
