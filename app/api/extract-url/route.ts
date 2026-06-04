@@ -49,6 +49,44 @@ function parseUrl(value: unknown): URL | null {
   }
 }
 
+function toIsoDate(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value.trim());
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function parseJsonLdBlocks(html: string): unknown[] {
+  const blocks = Array.from(html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi));
+  return blocks.flatMap((match) => {
+    try {
+      const parsed = JSON.parse(match[1]);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function findDatePosted(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const direct = toIsoDate(record.datePosted) ?? toIsoDate(record.postedDate) ?? toIsoDate(record.datePublished);
+  if (direct) return direct;
+  for (const nested of Object.values(record)) {
+    if (Array.isArray(nested)) {
+      for (const item of nested) {
+        const found = findDatePosted(item);
+        if (found) return found;
+      }
+    } else if (nested && typeof nested === "object") {
+      const found = findDatePosted(nested);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -101,6 +139,7 @@ export async function POST(request: Request) {
     const description = getMeta(html, "description") ?? getMeta(html, "og:description") ?? cleanText(html).slice(0, 12_000);
     const role = title.split(/[|-]/)[0]?.trim() || "Review extracted title";
     const company = title.split(/[|-]/)[1]?.trim() || "Review extracted company";
+    const listingPostedDate = parseJsonLdBlocks(html).map(findDatePosted).find(Boolean) ?? toIsoDate(getMeta(html, "date")) ?? toIsoDate(getMeta(html, "article:published_time"));
 
     return NextResponse.json({
       data: {
@@ -108,6 +147,7 @@ export async function POST(request: Request) {
         company,
         url: url.toString(),
         job_description: description,
+        listing_posted_date: listingPostedDate,
         notes: "Extracted from a public URL. Review all fields before saving.",
       },
     });
