@@ -21,8 +21,33 @@ const emptyDraft: OpportunityInsert = {
   source: "",
 };
 
+const ACTIVE_PIPELINE_STATUSES: OpportunityStatus[] = [
+  "new",
+  "selected",
+  "researching",
+  "applied",
+  "outreach_drafted",
+  "outreach_sent",
+  "follow_up_due",
+  "interviewing",
+  "offer",
+];
+
+const CLOSED_STATUSES: OpportunityStatus[] = ["closed", "rejected"];
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function daysSince(isoDate: string) {
+  const then = new Date(isoDate).getTime();
+  const now = Date.now();
+  return Math.floor((now - then) / (1000 * 60 * 60 * 24));
+}
+
+function formatPercent(value: number, total: number) {
+  if (total === 0) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
 }
 
 function inferRoleBucket(role: string, description: string): RoleBucket {
@@ -32,6 +57,24 @@ function inferRoleBucket(role: string, description: string): RoleBucket {
   if (text.includes("venture") || text.includes("startup") || text.includes("incubator") || text.includes("accelerator") || text.includes("operator")) return "Venture Builder / Startup Operator";
   if (text.includes("partnership") || text.includes("corporate development") || text.includes("corp dev") || text.includes("business development") || text.includes("strategic alliance")) return "Partnerships / Corporate Development";
   return "General Strategy & Operations";
+}
+
+function matchesSearch(opportunity: Opportunity, searchTerm: string) {
+  const query = searchTerm.trim().toLowerCase();
+  if (!query) return true;
+  const searchable = [
+    opportunity.company,
+    opportunity.role,
+    opportunity.location,
+    opportunity.url,
+    opportunity.source,
+    opportunity.role_bucket,
+    opportunity.priority,
+    STATUS_LABELS[opportunity.status],
+    opportunity.notes,
+    opportunity.network_notes,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return searchable.includes(query);
 }
 
 function Bar({ label, value, max }: { label: string; value: number; max: number }) {
@@ -58,6 +101,7 @@ export function DashboardClient() {
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
   const [priorityFilter, setPriorityFilter] = useState<OpportunityPriority | "all">("all");
   const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   async function loadOpportunities() {
     const response = await fetch("/api/opportunities");
@@ -130,8 +174,10 @@ export function DashboardClient() {
     setOpportunities((current) => current.map((opportunity) => opportunity.id === id ? payload.data as Opportunity : opportunity));
   }
 
+  const today = todayIso();
+  const activeOpportunities = opportunities.filter((opportunity) => !CLOSED_STATUSES.includes(opportunity.status));
+
   const metrics = useMemo(() => {
-    const today = todayIso();
     return {
       total: opportunities.length,
       highPriority: opportunities.filter((opportunity) => opportunity.priority === "high").length,
@@ -139,12 +185,37 @@ export function DashboardClient() {
       applicationsSent: opportunities.filter((opportunity) => ["applied", "outreach_drafted", "outreach_sent", "follow_up_due", "interviewing", "offer", "rejected", "closed"].includes(opportunity.status)).length,
       interviews: opportunities.filter((opportunity) => ["interviewing", "offer"].includes(opportunity.status)).length,
     };
-  }, [opportunities]);
+  }, [opportunities, today]);
 
   const bucketCounts = ROLE_BUCKETS.map((bucket) => ({ bucket, count: opportunities.filter((opportunity) => opportunity.role_bucket === bucket).length }));
   const maxBucketCount = Math.max(1, ...bucketCounts.map((item) => item.count));
   const pinnedOpportunities = opportunities.filter((opportunity) => opportunity.is_pinned).slice(0, 5);
+
+  const attentionItems = activeOpportunities
+    .map((opportunity) => {
+      const reasons: string[] = [];
+      if (opportunity.next_action_date && opportunity.next_action_date <= today) reasons.push(`Next action due ${opportunity.next_action_date}`);
+      if (opportunity.priority === "high" && !opportunity.is_pinned) reasons.push("High priority but not pinned");
+      if (daysSince(opportunity.updated_at) >= 7) reasons.push(`No update in ${daysSince(opportunity.updated_at)} days`);
+      return reasons.length ? { opportunity, reasons } : null;
+    })
+    .filter((item): item is { opportunity: Opportunity; reasons: string[] } => Boolean(item))
+    .slice(0, 6);
+
+  const funnelStages = ACTIVE_PIPELINE_STATUSES.map((status) => {
+    const count = statusCount(opportunities, status);
+    const percent = metrics.total === 0 ? 0 : Math.round((count / metrics.total) * 100);
+    return {
+      status,
+      label: STATUS_LABELS[status],
+      count,
+      percent,
+      width: metrics.total === 0 ? 100 : Math.max(22, percent),
+    };
+  });
+
   const filteredOpportunities = opportunities.filter((opportunity) => {
+    if (!matchesSearch(opportunity, searchTerm)) return false;
     if (bucketFilter !== "all" && opportunity.role_bucket !== bucketFilter) return false;
     if (statusFilter !== "all" && opportunity.status !== statusFilter) return false;
     if (priorityFilter !== "all" && opportunity.priority !== priorityFilter) return false;
@@ -171,14 +242,32 @@ export function DashboardClient() {
 
         <section className="card stack">
           <h2>Status funnel</h2>
-          <div className="funnel">
-            {OPPORTUNITY_STATUSES.map((status) => (
-              <div className="funnel-step" key={status}>
-                <span>{STATUS_LABELS[status]}</span>
-                <strong>{statusCount(opportunities, status)}</strong>
+          <p className="muted">Count and percentage of the total pipeline in each stage.</p>
+          <div className="visual-funnel" aria-label="Opportunity status funnel">
+            {funnelStages.map((stage) => (
+              <div className="funnel-band" key={stage.status} style={{ width: `${stage.width}%` }}>
+                <span>{stage.label}</span>
+                <strong>{stage.count} · {formatPercent(stage.count, metrics.total)}</strong>
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="card stack">
+          <h2>Needs attention</h2>
+          <p className="muted">Overdue, stale, or high-priority opportunities that should not slip.</p>
+          {attentionItems.length === 0 ? <p className="muted">Nothing needs attention right now.</p> : (
+            <div className="attention-list">
+              {attentionItems.map(({ opportunity, reasons }) => (
+                <article className="attention-item" key={opportunity.id}>
+                  <div className="row"><strong>{opportunity.company}</strong><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div>
+                  <p>{opportunity.role}</p>
+                  <p className="muted">{reasons.join(" · ")}</p>
+                  <Link href={`/opportunities/${opportunity.id}`}>Review</Link>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="card stack">
@@ -239,12 +328,14 @@ export function DashboardClient() {
 
         <section className="card stack">
           <h2>Opportunities</h2>
+          <label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, notes, contact path..." /></label>
           <div className="filter-grid">
             <label>Bucket<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value as RoleBucket | "all")}><option value="all">All buckets</option>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
             <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
             <label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
             <label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label>
           </div>
+          <p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p>
           {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => (
             <article className="card" key={opportunity.id}>
               <div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
