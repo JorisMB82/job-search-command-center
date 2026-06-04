@@ -6,6 +6,26 @@ import { buildOpportunityAnalysisPrompt, buildResumeTailoringPrompt, buildShortO
 import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate, RoleBucket } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, ROLE_BUCKETS, STATUS_LABELS } from "../lib/database.types";
 
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Unknown";
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "Unknown";
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function daysSince(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  if (Number.isNaN(parsed)) return null;
+  return Math.max(0, Math.floor((Date.now() - parsed) / (1000 * 60 * 60 * 24)));
+}
+
+function formatAge(value: string | null | undefined) {
+  const age = daysSince(value);
+  if (age === null) return "Unknown age";
+  return age === 0 ? "today" : `${age}d ago`;
+}
+
 export function OpportunityDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
@@ -97,17 +117,9 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     setMessage("Opportunity updated.");
   }
 
-  async function saveInterviewPrepNotes() {
-    await updateOpportunity({ interview_prep_notes: interviewPrepNotes });
-  }
-
-  async function saveResumeTailoringNotes() {
-    await updateOpportunity({ resume_tailoring_notes: resumeTailoringNotes });
-  }
-
-  async function saveGeneralNotes() {
-    await updateOpportunity({ general_notes: generalNotes, notes: generalNotes });
-  }
+  async function saveInterviewPrepNotes() { await updateOpportunity({ interview_prep_notes: interviewPrepNotes }); }
+  async function saveResumeTailoringNotes() { await updateOpportunity({ resume_tailoring_notes: resumeTailoringNotes }); }
+  async function saveGeneralNotes() { await updateOpportunity({ general_notes: generalNotes, notes: generalNotes }); }
 
   async function deleteOpportunity() {
     const response = await fetch(`/api/opportunities/${id}`, { method: "DELETE" });
@@ -136,20 +148,20 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     }
   }
 
-  if (!opportunity) {
-    return <section className="card"><p>{message || "Loading opportunity..."}</p></section>;
-  }
+  if (!opportunity) return <section className="card"><p>{message || "Loading opportunity..."}</p></section>;
 
   return (
     <>
       <section className="card stack">
         <div className="row"><h1>{opportunity.role}</h1><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
         <p><strong>{opportunity.company}</strong>{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
+        <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAge(opportunity.created_at)})</p>
         {opportunity.url ? <p><a href={opportunity.url} target="_blank" rel="noreferrer">Open source posting</a></p> : null}
         <div className="filter-grid">
           <label>Status<select value={opportunity.status} onChange={(event) => void updateOpportunity({ status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
           <label>Priority<select value={opportunity.priority} onChange={(event) => void updateOpportunity({ priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
           <label>Role bucket<select value={opportunity.role_bucket} onChange={(event) => void updateOpportunity({ role_bucket: event.target.value as RoleBucket })}>{ROLE_BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
+          <label>Listing posted date<input type="date" value={opportunity.listing_posted_date ?? ""} onChange={(event) => void updateOpportunity({ listing_posted_date: event.target.value || null })} /></label>
           <label>Next action date<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void updateOpportunity({ next_action_date: event.target.value || null })} /></label>
           <label className="checkbox-row"><input type="checkbox" checked={opportunity.is_pinned} onChange={(event) => void updateOpportunity({ is_pinned: event.target.checked })} /> Pin as top opportunity</label>
         </div>
@@ -158,80 +170,17 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       </section>
 
       <section className="grid">
-        <article className="card stack">
-          <div className="row"><h2>Interview Prep Notes</h2><button className="secondary" type="button" onClick={() => void saveInterviewPrepNotes()}>Save interview notes</button></div>
-          <p className="muted">Paste the INTERVIEW PREP BRIEF from the short ChatGPT prompt here.</p>
-          <textarea className="prep-notes" value={interviewPrepNotes} onChange={(event) => setInterviewPrepNotes(event.target.value)} placeholder="Paste INTERVIEW PREP BRIEF here." />
-        </article>
-
-        <article className="card stack">
-          <div className="row"><h2>Resume Tailoring Notes</h2><button className="secondary" type="button" onClick={() => void saveResumeTailoringNotes()}>Save resume notes</button></div>
-          <p className="muted">Paste the RESUME TAILORING BRIEF from the resume prompt here.</p>
-          <textarea className="prep-notes" value={resumeTailoringNotes} onChange={(event) => setResumeTailoringNotes(event.target.value)} placeholder="Paste RESUME TAILORING BRIEF here." />
-        </article>
-
-        <article className="card stack">
-          <div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div>
-          <p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the full prompt.</p>
-          <textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." />
-        </article>
+        <article className="card stack"><div className="row"><h2>Interview Prep Notes</h2><button className="secondary" type="button" onClick={() => void saveInterviewPrepNotes()}>Save interview notes</button></div><p className="muted">Paste the INTERVIEW PREP BRIEF from the short ChatGPT prompt here.</p><textarea className="prep-notes" value={interviewPrepNotes} onChange={(event) => setInterviewPrepNotes(event.target.value)} placeholder="Paste INTERVIEW PREP BRIEF here." /></article>
+        <article className="card stack"><div className="row"><h2>Resume Tailoring Notes</h2><button className="secondary" type="button" onClick={() => void saveResumeTailoringNotes()}>Save resume notes</button></div><p className="muted">Paste the RESUME TAILORING BRIEF from the resume prompt here.</p><textarea className="prep-notes" value={resumeTailoringNotes} onChange={(event) => setResumeTailoringNotes(event.target.value)} placeholder="Paste RESUME TAILORING BRIEF here." /></article>
+        <article className="card stack"><div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div><p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the full prompt.</p><textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." /></article>
       </section>
 
-      <section className="card stack">
-        <div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>
-        {matchingResumeTemplate ? (
-          <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</p>
-        ) : (
-          <p className="error">No matching resume template found for this bucket. Add resume text under the Resume Templates section using the same bucket name.</p>
-        )}
-        {matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}
-        {resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}
-        {resumePrompt ? <pre>{resumePrompt}</pre> : null}
-      </section>
-
-      <section className="card stack">
-        <div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div>
-        <p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>
-        {shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}
-        <pre>{shortPrompt}</pre>
-      </section>
-
-      <section className="card stack">
-        <div className="row"><h2>Full ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}>Copy full prompt</button></div>
-        <p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>
-        {fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}
-        <pre>{fullPrompt}</pre>
-      </section>
-
-      <section className="card stack">
-        <h2>Job description</h2>
-        <p>{opportunity.job_description}</p>
-      </section>
-
-      <section className="card stack">
-        <h2>Save outreach draft</h2>
-        <p className="muted">Drafts are saved only. The app never auto-sends emails or messages.</p>
-        <form className="stack" onSubmit={saveDraft}>
-          <label>Recipient<input value={draft.recipient ?? ""} onChange={(event) => setDraft({ ...draft, recipient: event.target.value })} /></label>
-          <label>Channel<input value={draft.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} /></label>
-          <label>Subject<input value={draft.subject ?? ""} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} /></label>
-          <label>Body<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} required /></label>
-          <button type="submit">Save draft</button>
-        </form>
-      </section>
-
-      <section className="card stack">
-        <h2>Delete opportunity</h2>
-        <p className="muted">Use delete only for duplicates, test entries, or mistakes. For real opportunities, prefer changing status to Closed / Archived.</p>
-        {!confirmDelete ? (
-          <button className="danger" type="button" onClick={() => setConfirmDelete(true)}>Delete opportunity</button>
-        ) : (
-          <div className="row">
-            <button className="danger" type="button" onClick={() => void deleteOpportunity()}>Confirm delete permanently</button>
-            <button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
-          </div>
-        )}
-      </section>
+      <section className="card stack"><div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>{matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</p> : <p className="error">No matching resume template found for this bucket. Add resume text under the Resume Templates section using the same bucket name.</p>}{matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}{resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}{resumePrompt ? <pre>{resumePrompt}</pre> : null}</section>
+      <section className="card stack"><div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div><p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>{shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}<pre>{shortPrompt}</pre></section>
+      <section className="card stack"><div className="row"><h2>Full ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}>Copy full prompt</button></div><p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>{fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}<pre>{fullPrompt}</pre></section>
+      <section className="card stack"><h2>Job description</h2><p>{opportunity.job_description}</p></section>
+      <section className="card stack"><h2>Save outreach draft</h2><p className="muted">Drafts are saved only. The app never auto-sends emails or messages.</p><form className="stack" onSubmit={saveDraft}><label>Recipient<input value={draft.recipient ?? ""} onChange={(event) => setDraft({ ...draft, recipient: event.target.value })} /></label><label>Channel<input value={draft.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} /></label><label>Subject<input value={draft.subject ?? ""} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} /></label><label>Body<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} required /></label><button type="submit">Save draft</button></form></section>
+      <section className="card stack"><h2>Delete opportunity</h2><p className="muted">Use delete only for duplicates, test entries, or mistakes. For real opportunities, prefer changing status to Closed / Archived.</p>{!confirmDelete ? <button className="danger" type="button" onClick={() => setConfirmDelete(true)}>Delete opportunity</button> : <div className="row"><button className="danger" type="button" onClick={() => void deleteOpportunity()}>Confirm delete permanently</button><button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section>
     </>
   );
 }
