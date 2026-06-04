@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSessionToken, isAccessPasswordConfigured, SESSION_COOKIE_NAME } from "../../../lib/auth";
 
+const REMEMBERED_DEVICE_DAYS = 90;
+
 export async function POST(request: Request) {
   if (!isAccessPasswordConfigured()) {
     return NextResponse.json({ error: "APP_ACCESS_PASSWORD is not configured." }, { status: 500 });
@@ -24,7 +26,7 @@ export async function POST(request: Request) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: 60 * 60 * 24 * REMEMBERED_DEVICE_DAYS,
   });
   return response;
 }
