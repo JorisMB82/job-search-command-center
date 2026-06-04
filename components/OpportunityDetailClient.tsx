@@ -11,13 +11,17 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   const [shortPromptCopied, setShortPromptCopied] = useState(false);
   const [fullPromptCopied, setFullPromptCopied] = useState(false);
   const [message, setMessage] = useState("");
+  const [prepNotes, setPrepNotes] = useState("");
 
   useEffect(() => {
     async function load() {
       const response = await fetch(`/api/opportunities/${id}`);
       const payload = (await response.json()) as { data?: Opportunity; error?: string };
       if (!response.ok || payload.error) setMessage(payload.error ?? "Could not load opportunity.");
-      else setOpportunity(payload.data ?? null);
+      else {
+        setOpportunity(payload.data ?? null);
+        setPrepNotes(payload.data?.notes ?? "");
+      }
     }
     void load();
   }, [id]);
@@ -51,7 +55,12 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       return;
     }
     setOpportunity(payload.data);
+    if (update.notes !== undefined) setPrepNotes(payload.data.notes ?? "");
     setMessage("Opportunity updated.");
+  }
+
+  async function savePrepNotes() {
+    await updateOpportunity({ notes: prepNotes });
   }
 
   async function saveDraft(event: FormEvent<HTMLFormElement>) {
@@ -88,16 +97,19 @@ export function OpportunityDetailClient({ id }: { id: string }) {
           <label className="checkbox-row"><input type="checkbox" checked={opportunity.is_pinned} onChange={(event) => void updateOpportunity({ is_pinned: event.target.checked })} /> Pin as top opportunity</label>
         </div>
         <label>Network notes<textarea value={opportunity.network_notes ?? ""} onChange={(event) => setOpportunity({ ...opportunity, network_notes: event.target.value })} onBlur={(event) => void updateOpportunity({ network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
-        <h2>Job description</h2>
-        <p>{opportunity.job_description}</p>
-        {opportunity.notes ? <><h2>Notes</h2><p>{opportunity.notes}</p></> : null}
         {message ? <p className="muted">{message}</p> : null}
       </section>
 
       <section className="card stack">
+        <div className="row"><h2>Prep / Analysis Notes</h2><button className="secondary" type="button" onClick={() => void savePrepNotes()}>Save prep notes</button></div>
+        <p className="muted">Paste the ChatGPT interview-prep brief or your call notes here so everything for this opportunity stays in one place.</p>
+        <textarea className="prep-notes" value={prepNotes} onChange={(event) => setPrepNotes(event.target.value)} placeholder="Paste the INTERVIEW PREP BRIEF here after running the short ChatGPT prompt." />
+      </section>
+
+      <section className="card stack">
         <div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div>
-        <p className="muted">Recommended for normal use. Keeps the full job description saved, but sends ChatGPT only the essential sections and keywords.</p>
-        {shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually.</p> : null}
+        <p className="muted">Recommended for normal use. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>
+        {shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Prep / Analysis Notes above.</p> : null}
         <pre>{shortPrompt}</pre>
       </section>
 
@@ -106,6 +118,11 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         <p className="muted">Use only when you want the entire saved job description included.</p>
         {fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually.</p> : null}
         <pre>{fullPrompt}</pre>
+      </section>
+
+      <section className="card stack">
+        <h2>Job description</h2>
+        <p>{opportunity.job_description}</p>
       </section>
 
       <section className="card stack">
