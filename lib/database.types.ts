@@ -71,6 +71,7 @@ export type Opportunity = {
   role_bucket: RoleBucket;
   priority: OpportunityPriority;
   is_pinned: boolean;
+  listing_posted_date: string | null;
   next_action_date: string | null;
   network_notes: string | null;
   source: string | null;
