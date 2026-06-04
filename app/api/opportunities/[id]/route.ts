@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import type { OpportunityPriority, OpportunityStatus, OpportunityUpdate, RoleBucket } from "../../../../lib/database.types";
-import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, ROLE_BUCKETS } from "../../../../lib/database.types";
+import type { OpportunityPriority, OpportunityStatus, OpportunityUpdate } from "../../../../lib/database.types";
+import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES } from "../../../../lib/database.types";
 import { getServerSupabaseClient } from "../../../../lib/supabase";
-
-function isRoleBucket(value: unknown): value is RoleBucket {
-  return typeof value === "string" && (ROLE_BUCKETS as readonly string[]).includes(value);
-}
 
 function isPriority(value: unknown): value is OpportunityPriority {
   return typeof value === "string" && (OPPORTUNITY_PRIORITIES as readonly string[]).includes(value);
@@ -59,7 +55,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (body.interview_prep_notes !== undefined) update.interview_prep_notes = normalizeText(body.interview_prep_notes) ?? null;
   if (body.resume_tailoring_notes !== undefined) update.resume_tailoring_notes = normalizeText(body.resume_tailoring_notes) ?? null;
   if (body.general_notes !== undefined) update.general_notes = normalizeText(body.general_notes) ?? null;
-  if (body.role_bucket !== undefined && isRoleBucket(body.role_bucket)) update.role_bucket = body.role_bucket;
+  if (body.role_bucket !== undefined && body.role_bucket.trim()) update.role_bucket = body.role_bucket.trim();
   if (body.priority !== undefined && isPriority(body.priority)) update.priority = body.priority;
   if (body.is_pinned !== undefined) update.is_pinned = Boolean(body.is_pinned);
   if (body.listing_posted_date !== undefined) update.listing_posted_date = normalizeDate(body.listing_posted_date) ?? null;
