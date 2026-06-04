@@ -7,6 +7,7 @@ export function ResumeTemplatesClient() {
   const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
   const [draft, setDraft] = useState<ResumeTemplateInsert>({ name: "", content: "", notes: "" });
   const [message, setMessage] = useState("");
+  const [templatePendingDelete, setTemplatePendingDelete] = useState<string | null>(null);
 
   async function loadTemplates() {
     const response = await fetch("/api/resume-templates");
@@ -47,6 +48,22 @@ export function ResumeTemplatesClient() {
     }
   }
 
+  async function deleteTemplate(id: string) {
+    const response = await fetch("/api/resume-templates", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok || payload.error) {
+      setMessage(payload.error ?? "Could not delete resume template.");
+      return;
+    }
+    setTemplates((current) => current.filter((template) => template.id !== id));
+    setTemplatePendingDelete(null);
+    setMessage("Resume template deleted.");
+  }
+
   function editTemplate(id: string, update: Partial<ResumeTemplate>) {
     setTemplates((current) => current.map((template) => template.id === id ? { ...template, ...update } : template));
   }
@@ -62,7 +79,7 @@ export function ResumeTemplatesClient() {
           <label>Notes<textarea value={draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="When to use this resume version." /></label>
           <button type="submit">Save template</button>
         </form>
-        {message ? <p className="muted">{message}</p> : null}
+        {message ? <p className={message.includes("Could") || message.includes("required") ? "error" : "muted"}>{message}</p> : null}
       </section>
       <section className="card stack">
         <h2>Saved templates</h2>
@@ -72,7 +89,17 @@ export function ResumeTemplatesClient() {
             <label>Name<input value={template.name} onChange={(event) => editTemplate(template.id, { name: event.target.value })} /></label>
             <label>Notes<textarea value={template.notes ?? ""} onChange={(event) => editTemplate(template.id, { notes: event.target.value })} placeholder="When to use this resume version." /></label>
             <label>Resume text<textarea className="resume-content" value={template.content} onChange={(event) => editTemplate(template.id, { content: event.target.value })} placeholder="Paste full resume text here." /></label>
-            <button className="secondary" type="button" onClick={() => void updateTemplate(template)}>Save changes</button>
+            <div className="row">
+              <button className="secondary" type="button" onClick={() => void updateTemplate(template)}>Save changes</button>
+              {templatePendingDelete !== template.id ? (
+                <button className="danger secondary-danger" type="button" onClick={() => setTemplatePendingDelete(template.id)}>Delete template</button>
+              ) : (
+                <>
+                  <button className="danger" type="button" onClick={() => void deleteTemplate(template.id)}>Confirm delete</button>
+                  <button className="secondary" type="button" onClick={() => setTemplatePendingDelete(null)}>Cancel</button>
+                </>
+              )}
+            </div>
           </article>
         ))}
       </section>
