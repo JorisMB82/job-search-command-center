@@ -13,6 +13,9 @@ const emptyDraft: OpportunityInsert = {
   status: "new",
   job_description: "",
   notes: "",
+  interview_prep_notes: "",
+  resume_tailoring_notes: "",
+  general_notes: "",
   role_bucket: "General Strategy & Operations",
   priority: "medium",
   is_pinned: false,
@@ -72,6 +75,9 @@ function matchesSearch(opportunity: Opportunity, searchTerm: string) {
     opportunity.priority,
     STATUS_LABELS[opportunity.status],
     opportunity.notes,
+    opportunity.interview_prep_notes,
+    opportunity.resume_tailoring_notes,
+    opportunity.general_notes,
     opportunity.network_notes,
   ].filter(Boolean).join(" ").toLowerCase();
   return searchable.includes(query);
@@ -322,7 +328,7 @@ export function DashboardClient() {
             <label className="checkbox-row"><input type="checkbox" checked={draft.is_pinned} onChange={(event) => setDraft({ ...draft, is_pinned: event.target.checked })} /> Pin as top opportunity</label>
             <label>Job description<textarea value={draft.job_description} onChange={(event) => setDraft({ ...draft, job_description: event.target.value, role_bucket: inferRoleBucket(draft.role, event.target.value) })} required /></label>
             <label>Network notes<textarea value={draft.network_notes ?? ""} onChange={(event) => setDraft({ ...draft, network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
-            <label>Notes<textarea value={draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>
+            <label>General notes<textarea value={draft.general_notes ?? draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, general_notes: event.target.value, notes: event.target.value })} placeholder="Manual call notes, recruiter context, compensation notes, or initial observations." /></label>
             <button type="submit">Save opportunity</button>
           </form>
           {message ? <p className={message.includes("not") || message.includes("Could") || message.includes("error") ? "error" : "muted"}>{message}</p> : null}
