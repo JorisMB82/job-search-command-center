@@ -65,6 +65,9 @@ export type Opportunity = {
   status: OpportunityStatus;
   job_description: string;
   notes: string | null;
+  interview_prep_notes: string | null;
+  resume_tailoring_notes: string | null;
+  general_notes: string | null;
   role_bucket: RoleBucket;
   priority: OpportunityPriority;
   is_pinned: boolean;
