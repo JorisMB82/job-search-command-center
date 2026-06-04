@@ -49,6 +49,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (body.status !== undefined && isStatus(body.status)) update.status = body.status;
   if (body.job_description !== undefined && body.job_description.trim()) update.job_description = body.job_description;
   if (body.notes !== undefined) update.notes = normalizeText(body.notes) ?? null;
+  if (body.interview_prep_notes !== undefined) update.interview_prep_notes = normalizeText(body.interview_prep_notes) ?? null;
+  if (body.resume_tailoring_notes !== undefined) update.resume_tailoring_notes = normalizeText(body.resume_tailoring_notes) ?? null;
+  if (body.general_notes !== undefined) update.general_notes = normalizeText(body.general_notes) ?? null;
   if (body.role_bucket !== undefined && isRoleBucket(body.role_bucket)) update.role_bucket = body.role_bucket;
   if (body.priority !== undefined && isPriority(body.priority)) update.priority = body.priority;
   if (body.is_pinned !== undefined) update.is_pinned = Boolean(body.is_pinned);
