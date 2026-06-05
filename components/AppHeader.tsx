@@ -41,6 +41,7 @@ export function AppHeader() {
         <strong>Job Search Command Center</strong>
         <nav className="nav" aria-label="Primary navigation">
           <Link href="/">Dashboard</Link>
+          <Link href="/radar">Opportunity Radar</Link>
           <Link href="/resumes">Resume templates</Link>
           <Link href="/help">Help</Link>
           <button className="secondary theme-toggle" type="button" onClick={toggleTheme} aria-label="Toggle light and dark mode">
