@@ -20,6 +20,7 @@ export type ScannedSignal = {
 };
 
 const TIMEOUT_MS = 10000;
+const MIN_RELEVANCE_SCORE = 3;
 const FUNDING = ["raised", "funding", "seed", "series a", "series b", "series c", "investment", "round", "capital"];
 const EXPANSION = ["expands", "expansion", "launches in", "enters", "market entry", "u.s.", "us market", "north america", "new market"];
 const PRODUCT = ["launches", "unveils", "introduces", "platform", "product", "solution"];
@@ -41,7 +42,7 @@ function decodeXml(value: string) {
 }
 
 function tag(item: string, name: string) {
-  const match = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i"));
+  const match = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\/${name}>`, "i"));
   return match ? decodeXml(match[1]) : "";
 }
 
@@ -68,6 +69,7 @@ function score(text: string, publishedAt: string | null, category: string | null
   if (hasAny(text, PARTNER)) total += 2;
   if (hasAny(text, REGULATORY)) total += 2;
   if (hasAny(text, HIRING)) total += 2;
+  if (hasAny(text, PRODUCT)) total += 2;
   if (text.includes("strategy") || text.includes("operations") || text.includes("gtm") || text.includes("partnerships")) total += 2;
   if (category) total += 1;
   if (publishedAt) {
@@ -96,6 +98,10 @@ function extractCompany(headline: string) {
 function dedupe(url: string | null, headline: string, source: string | null) {
   const base = url || `${source || "source"}:${headline}`;
   return base.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 180);
+}
+
+function isRelevant(signal: ScannedSignal) {
+  return signal.relevance_score >= MIN_RELEVANCE_SCORE && signal.headline.trim().length > 0;
 }
 
 async function fetchText(url: string) {
@@ -139,13 +145,13 @@ export async function scanRssSource(source: RadarSource): Promise<ScannedSignal[
       summary,
       raw_excerpt: summary,
       relevance_score: score(text, published, source.category),
-      status: "new",
+      status: "new" as const,
       suggested_angle: suggestedAngle(text),
       notes: null,
       chatgpt_output: null,
       dedupe_key: dedupe(link, headline, source.name),
     };
-  });
+  }).filter(isRelevant);
 }
 
 export async function scanHackerNewsSource(source: RadarSource): Promise<ScannedSignal[]> {
@@ -168,13 +174,13 @@ export async function scanHackerNewsSource(source: RadarSource): Promise<Scanned
       summary,
       raw_excerpt: summary,
       relevance_score: score(text, hit.created_at || null, source.category),
-      status: "new",
+      status: "new" as const,
       suggested_angle: suggestedAngle(text),
       notes: null,
       chatgpt_output: null,
       dedupe_key: dedupe(hit.url || null, headline, source.name),
     };
-  });
+  }).filter(isRelevant);
 }
 
 export async function scanSource(source: RadarSource): Promise<ScannedSignal[]> {
