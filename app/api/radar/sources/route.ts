@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       url,
       source_type: normalizeText(body.source_type) ?? "rss",
       category: normalizeText(body.category),
-      keywords: Array.isArray(body.keywords) ? body.keywords.map(String).map((item) => item.trim()).filter(Boolean) : [],
+      keywords: Array.isArray(body.keywords) ? body.keywords.map(String).map((item: string) => item.trim()).filter(Boolean) : [],
       is_active: body.is_active !== false,
       notes: normalizeText(body.notes),
     };
@@ -47,7 +47,7 @@ export async function PATCH(request: Request) {
     if (!body.id) return NextResponse.json({ error: "Source id is required." }, { status: 400 });
     const update: Record<string, unknown> = {};
     for (const field of ["name", "url", "source_type", "category", "notes", "last_error"]) if (body[field] !== undefined) update[field] = normalizeText(body[field]);
-    if (body.keywords !== undefined) update.keywords = Array.isArray(body.keywords) ? body.keywords.map(String).map((item) => item.trim()).filter(Boolean) : [];
+    if (body.keywords !== undefined) update.keywords = Array.isArray(body.keywords) ? body.keywords.map(String).map((item: string) => item.trim()).filter(Boolean) : [];
     if (body.is_active !== undefined) update.is_active = Boolean(body.is_active);
     if (body.last_scanned_at !== undefined) update.last_scanned_at = body.last_scanned_at;
     const { data, error } = await (supabase as any).from("radar_sources").update(update).eq("id", body.id).select("*").single();
