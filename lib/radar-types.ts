@@ -1,0 +1,98 @@
+export type RadarSourceType = "rss" | "hackernews" | "manual" | "github_search" | "sec_edgar";
+export type RadarSignalStatus = "new" | "saved" | "watching" | "dismissed" | "converted";
+export type RadarSignalType = "funding" | "expansion" | "product_launch" | "partnership" | "regulatory" | "hiring" | "market_entry" | "leadership" | "strategic_pivot" | "other";
+
+export type RadarSource = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  url: string;
+  source_type: RadarSourceType;
+  category: string | null;
+  keywords: string[];
+  is_active: boolean;
+  notes: string | null;
+  last_scanned_at: string | null;
+  last_error: string | null;
+};
+
+export type RadarSignal = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  source_id: string | null;
+  company: string | null;
+  headline: string;
+  url: string | null;
+  source_name: string | null;
+  published_at: string | null;
+  signal_type: RadarSignalType;
+  category: string | null;
+  summary: string | null;
+  raw_excerpt: string | null;
+  relevance_score: number;
+  status: RadarSignalStatus;
+  suggested_angle: string | null;
+  notes: string | null;
+  chatgpt_output: string | null;
+  dedupe_key: string | null;
+};
+
+export type StrategicAngle = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  category: string | null;
+  best_fit_company: string | null;
+  trigger_signals: string[];
+  pain_hypothesis: string | null;
+  credibility_points: string | null;
+  short_pitch: string | null;
+  longer_thesis: string | null;
+  cta: string | null;
+  relevant_resume_template: string | null;
+  is_active: boolean;
+  sort_order: number;
+};
+
+export type TargetCompany = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  company: string;
+  website: string | null;
+  sector: string | null;
+  stage: string | null;
+  target_status: string;
+  best_signal_id: string | null;
+  best_angle_id: string | null;
+  selected_resume_template: string | null;
+  why_interesting: string | null;
+  pain_hypothesis: string | null;
+  unposted_role_thesis: string | null;
+  proposal_angle: string | null;
+  contact_strategy: string | null;
+  outreach_status: string;
+  contact_name: string | null;
+  contact_title: string | null;
+  contact_url: string | null;
+  last_touch_date: string | null;
+  next_action_date: string | null;
+  notes: string | null;
+};
+
+export type RadarMessage = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  target_company_id: string | null;
+  signal_id: string | null;
+  angle_id: string | null;
+  message_type: string;
+  prompt_text: string | null;
+  output_text: string | null;
+  status: string;
+  notes: string | null;
+};
