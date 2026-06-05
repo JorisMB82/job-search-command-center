@@ -1,5 +1,13 @@
+import { AppHeader } from "../../../../components/AppHeader";
 import { RadarTargetDetailClient } from "../../../../components/RadarTargetDetailClient";
 
 export default function RadarTargetPage({ params }: { params: { id: string } }) {
-  return <RadarTargetDetailClient id={params.id} />;
+  return (
+    <>
+      <AppHeader />
+      <main className="stack">
+        <RadarTargetDetailClient id={params.id} />
+      </main>
+    </>
+  );
 }
