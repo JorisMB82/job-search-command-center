@@ -13,7 +13,7 @@ const DEFAULT_ANGLES = [
 function shape(body: any) {
   return {
     name: normalizeText(body.name), category: normalizeText(body.category), best_fit_company: normalizeText(body.best_fit_company),
-    trigger_signals: Array.isArray(body.trigger_signals) ? body.trigger_signals.map(String).map((x) => x.trim()).filter(Boolean) : [],
+    trigger_signals: Array.isArray(body.trigger_signals) ? body.trigger_signals.map(String).map((x: string) => x.trim()).filter(Boolean) : [],
     pain_hypothesis: normalizeText(body.pain_hypothesis), credibility_points: normalizeText(body.credibility_points), short_pitch: normalizeText(body.short_pitch), longer_thesis: normalizeText(body.longer_thesis), cta: normalizeText(body.cta), relevant_resume_template: normalizeText(body.relevant_resume_template), is_active: body.is_active !== false, sort_order: Number(body.sort_order) || 0
   };
 }
