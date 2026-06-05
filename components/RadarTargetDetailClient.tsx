@@ -4,14 +4,32 @@ import { useEffect, useState } from "react";
 import type { RadarMessage, StrategicAngle, TargetCompany } from "../lib/radar-types";
 
 type PromptType = "company_research" | "unposted_role" | "proposal_outreach" | "contact_strategy" | "strategic_angle";
+type ApiPayload<T> = { data?: T; error?: string };
+
+type PromptSlot = {
+  key: PromptType;
+  label: string;
+  help: string;
+};
+
+const promptSlots: PromptSlot[] = [
+  { key: "company_research", label: "Company research", help: "Use this first to understand whether the company is worth pursuing." },
+  { key: "unposted_role", label: "Unposted role", help: "Use this to frame a role thesis before a formal job exists." },
+  { key: "proposal_outreach", label: "Proposal outreach", help: "Use this to shape a consulting, advisory, or fractional engagement angle." },
+  { key: "contact_strategy", label: "Contact strategy", help: "Use this to decide who to look for manually and how to approach them." },
+  { key: "strategic_angle", label: "Strategic angle", help: "Use this to turn the signal into a concise point of view." },
+];
+
+function emptyPromptMap(): Record<PromptType, string> {
+  return { company_research: "", unposted_role: "", proposal_outreach: "", contact_strategy: "", strategic_angle: "" };
+}
 
 export function RadarTargetDetailClient({ id }: { id: string }) {
   const [target, setTarget] = useState<TargetCompany | null>(null);
   const [angles, setAngles] = useState<StrategicAngle[]>([]);
   const [messages, setMessages] = useState<RadarMessage[]>([]);
-  const [prompt, setPrompt] = useState("");
-  const [output, setOutput] = useState("");
-  const [messageType, setMessageType] = useState<PromptType>("company_research");
+  const [prompts, setPrompts] = useState<Record<PromptType, string>>(emptyPromptMap());
+  const [outputs, setOutputs] = useState<Record<PromptType, string>>(emptyPromptMap());
   const [message, setMessage] = useState("");
 
   async function load() {
@@ -20,10 +38,10 @@ export function RadarTargetDetailClient({ id }: { id: string }) {
       fetch("/api/radar/angles"),
       fetch(`/api/radar/messages?target_company_id=${id}`),
     ]);
-    const targetPayload = await targetRes.json();
-    const anglePayload = await angleRes.json();
-    const messagePayload = await messageRes.json();
-    if (targetPayload.error || anglePayload.error || messagePayload.error) setMessage(targetPayload.error || anglePayload.error || messagePayload.error);
+    const targetPayload = await targetRes.json() as ApiPayload<TargetCompany>;
+    const anglePayload = await angleRes.json() as ApiPayload<StrategicAngle[]>;
+    const messagePayload = await messageRes.json() as ApiPayload<RadarMessage[]>;
+    if (targetPayload.error || anglePayload.error || messagePayload.error) setMessage(targetPayload.error || anglePayload.error || messagePayload.error || "Radar target load failed.");
     setTarget(targetPayload.data ?? null);
     setAngles(anglePayload.data ?? []);
     setMessages(messagePayload.data ?? []);
@@ -33,27 +51,41 @@ export function RadarTargetDetailClient({ id }: { id: string }) {
 
   async function save(update: Partial<TargetCompany>) {
     const response = await fetch("/api/radar/targets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...update }) });
-    const payload = await response.json();
-    if (payload.error) setMessage(payload.error); else { setTarget(payload.data); setMessage("Target updated."); }
+    const payload = await response.json() as ApiPayload<TargetCompany>;
+    if (payload.error || !payload.data) setMessage(payload.error || "Target update failed."); else { setTarget(payload.data); setMessage("Target updated."); }
   }
 
   async function build(type: PromptType) {
     if (!target) return;
     const angle = angles.find((item) => item.id === target.best_angle_id) ?? null;
     const response = await fetch("/api/radar/prompts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, target, angle }) });
-    const payload = await response.json();
-    if (payload.error) setMessage(payload.error); else { setPrompt(payload.data.prompt); setMessageType(type); await navigator.clipboard?.writeText(payload.data.prompt).catch(() => undefined); }
+    const payload = await response.json() as ApiPayload<{ prompt: string }>;
+    if (payload.error || !payload.data) {
+      setMessage(payload.error || "Prompt generation failed.");
+      return;
+    }
+    setPrompts((current) => ({ ...current, [type]: payload.data?.prompt ?? "" }));
+    setMessage(`${promptSlots.find((slot) => slot.key === type)?.label ?? "Prompt"} copied. Paste it into ChatGPT Plus manually.`);
+    await navigator.clipboard?.writeText(payload.data.prompt).catch(() => undefined);
   }
 
-  async function saveOutput() {
-    const response = await fetch("/api/radar/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_company_id: id, message_type: messageType, prompt_text: prompt, output_text: output, status: "used" }) });
-    const payload = await response.json();
-    if (payload.error) setMessage(payload.error); else { setMessages((current) => [payload.data, ...current]); setOutput(""); setMessage("Output saved."); }
+  async function saveOutput(type: PromptType) {
+    const promptText = prompts[type];
+    const outputText = outputs[type];
+    const response = await fetch("/api/radar/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_company_id: id, message_type: type, prompt_text: promptText, output_text: outputText, status: "used" }) });
+    const payload = await response.json() as ApiPayload<RadarMessage>;
+    if (payload.error || !payload.data) {
+      setMessage(payload.error || "Output save failed.");
+      return;
+    }
+    setMessages((current) => [payload.data as RadarMessage, ...current]);
+    setOutputs((current) => ({ ...current, [type]: "" }));
+    setMessage("Output saved.");
   }
 
   async function convert() {
     const response = await fetch("/api/radar/convert-to-opportunity", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_company_id: id }) });
-    const payload = await response.json();
+    const payload = await response.json() as ApiPayload<unknown>;
     if (payload.error) setMessage(payload.error); else { setMessage("Converted to opportunity."); await load(); }
   }
 
@@ -62,7 +94,7 @@ export function RadarTargetDetailClient({ id }: { id: string }) {
   return <div className="stack">
     <section className="card stack"><div className="row"><h1>{target.company}</h1><span className="badge">{target.target_status}</span><span className="badge accent">{target.outreach_status}</span></div><p className="muted">Saved target from Opportunity Radar. Use this page to refine the thesis, copy prompts, and save paste-back outputs.</p>{message ? <p className="muted">{message}</p> : null}</section>
     <section className="card stack"><h2>Target fields</h2><div className="filter-grid"><label>Website<input value={target.website ?? ""} onChange={(e) => setTarget({ ...target, website: e.target.value })} onBlur={(e) => void save({ website: e.target.value })} /></label><label>Sector<input value={target.sector ?? ""} onChange={(e) => setTarget({ ...target, sector: e.target.value })} onBlur={(e) => void save({ sector: e.target.value })} /></label><label>Status<input value={target.target_status} onChange={(e) => setTarget({ ...target, target_status: e.target.value })} onBlur={(e) => void save({ target_status: e.target.value })} /></label><label>Outreach status<input value={target.outreach_status} onChange={(e) => setTarget({ ...target, outreach_status: e.target.value })} onBlur={(e) => void save({ outreach_status: e.target.value })} /></label><label>Next action<input type="date" value={target.next_action_date ?? ""} onChange={(e) => setTarget({ ...target, next_action_date: e.target.value })} onBlur={(e) => void save({ next_action_date: e.target.value || null })} /></label><label>Contact URL<input value={target.contact_url ?? ""} onChange={(e) => setTarget({ ...target, contact_url: e.target.value })} onBlur={(e) => void save({ contact_url: e.target.value })} /></label></div><label>Why interesting<textarea value={target.why_interesting ?? ""} onChange={(e) => setTarget({ ...target, why_interesting: e.target.value })} onBlur={(e) => void save({ why_interesting: e.target.value })} /></label><label>Pain hypothesis<textarea value={target.pain_hypothesis ?? ""} onChange={(e) => setTarget({ ...target, pain_hypothesis: e.target.value })} onBlur={(e) => void save({ pain_hypothesis: e.target.value })} /></label><label>Unposted role thesis<textarea value={target.unposted_role_thesis ?? ""} onChange={(e) => setTarget({ ...target, unposted_role_thesis: e.target.value })} onBlur={(e) => void save({ unposted_role_thesis: e.target.value })} /></label><label>Proposal angle<textarea value={target.proposal_angle ?? ""} onChange={(e) => setTarget({ ...target, proposal_angle: e.target.value })} onBlur={(e) => void save({ proposal_angle: e.target.value })} /></label><label>Contact strategy<textarea value={target.contact_strategy ?? ""} onChange={(e) => setTarget({ ...target, contact_strategy: e.target.value })} onBlur={(e) => void save({ contact_strategy: e.target.value })} /></label><div className="row"><button onClick={() => void convert()}>Convert to opportunity</button></div></section>
-    <section className="card stack"><h2>Prompt actions</h2><div className="row"><button className="secondary" onClick={() => void build("company_research")}>Company research</button><button className="secondary" onClick={() => void build("unposted_role")}>Unposted role</button><button className="secondary" onClick={() => void build("proposal_outreach")}>Proposal outreach</button><button className="secondary" onClick={() => void build("contact_strategy")}>Contact strategy</button><button className="secondary" onClick={() => void build("strategic_angle")}>Strategic angle</button></div>{prompt ? <><pre>{prompt}</pre><label>Paste ChatGPT output<textarea value={output} onChange={(e) => setOutput(e.target.value)} /></label><button onClick={() => void saveOutput()} disabled={!output.trim()}>Save output</button></> : null}</section>
+    <section className="card stack"><h2>Prompt actions</h2><p className="muted">Each prompt type now has its own independent output box. Generate one, paste it into ChatGPT Plus, then paste the result back into that same section.</p>{promptSlots.map((slot) => <article className="mini-card stack" key={slot.key}><div className="row"><strong>{slot.label}</strong><button className="secondary" onClick={() => void build(slot.key)}>Generate / copy prompt</button>{prompts[slot.key] ? <button className="secondary" onClick={() => navigator.clipboard.writeText(prompts[slot.key])}>Copy again</button> : null}</div><p className="muted">{slot.help}</p>{prompts[slot.key] ? <pre>{prompts[slot.key]}</pre> : null}<label>Paste ChatGPT output for {slot.label}<textarea value={outputs[slot.key]} onChange={(e) => setOutputs((current) => ({ ...current, [slot.key]: e.target.value }))} /></label><button onClick={() => void saveOutput(slot.key)} disabled={!outputs[slot.key].trim()}>Save {slot.label} output</button></article>)}</section>
     <section className="card stack"><h2>Saved outputs</h2>{messages.length === 0 ? <p className="muted">No saved outputs yet.</p> : messages.map((item) => <article className="mini-card stack" key={item.id}><div className="row"><strong>{item.message_type}</strong><span className="badge">{item.status}</span></div>{item.output_text ? <p>{item.output_text}</p> : null}</article>)}</section>
   </div>;
 }
