@@ -239,6 +239,67 @@ RESUME TAILORING BRIEF — ${opportunity.company} / ${opportunity.role}
 - Any claims I should avoid because they are not clearly supported by the resume text.`;
 }
 
+export function buildOutreachDraftPrompt(opportunity: Opportunity, resumeTemplate: ResumeTemplate | null): string {
+  const essentialDescription = buildEssentialDescription(opportunity.job_description);
+  const detectedKeywords = detectKeywords(opportunity.job_description);
+  const resumeContext = resumeTemplate
+    ? `Selected resume template: ${resumeTemplate.name}\n\nResume text:\n${truncate(normalizeWhitespace(resumeTemplate.content), MAX_RESUME_CHARS, "resume template")}`
+    : "No matching saved resume template was found. Use only the job description and app notes; do not invent resume details.";
+
+  return `You are my job-search outreach writing partner. Draft a concise, manually-sendable outreach message for this opportunity. Do not apply, send, browse, or take action on my behalf. Do not invent experience, relationships, referrals, metrics, or company knowledge that is not supported by the context below.
+
+Goal:
+Create a strong outreach draft that I can paste back into my private job-search app, edit if needed, and manually send later.
+
+Opportunity:
+Company: ${opportunity.company}
+Role: ${opportunity.role}
+Location: ${opportunity.location ?? "Not listed"}
+URL: ${opportunity.url ?? "Not provided"}
+Status: ${opportunity.status}
+Role bucket: ${opportunity.role_bucket}
+Priority: ${opportunity.priority}
+Network notes: ${opportunity.network_notes ?? "None yet"}
+
+Detected job keywords:
+${detectedKeywords}
+
+Job description excerpt:
+${essentialDescription}
+
+${resumeContext}
+
+My saved app notes and ChatGPT feedback:
+${notesForPrompt(opportunity)}
+
+Please return the answer in this exact structure:
+
+OUTREACH DRAFT — ${opportunity.company} / ${opportunity.role}
+
+1. BEST ANGLE
+- One sentence explaining the outreach angle I should use.
+
+2. SUBJECT OPTIONS
+- Give 3 short email subject lines.
+
+3. EMAIL DRAFT
+- Write a concise email of 120-170 words.
+- Make it specific to the company and role.
+- Sound senior, direct, and practical.
+- Do not sound desperate, generic, overpromotional, or overly familiar.
+- Include one clear call to action.
+- Use placeholders like [Name] only where needed.
+
+4. LINKEDIN / SHORT MESSAGE VERSION
+- Write a version under 450 characters.
+
+5. CAUTIONS
+- List any claims I should avoid or verify before sending.
+
+6. APP NEXT STEP
+- Tell me exactly what to paste into the Subject and Body fields of the app's Save Outreach Draft section.`;
+}
+
 export function buildOpportunityAnalysisPrompt(opportunity: Opportunity): string {
   return `You are my job-search strategy partner. Analyze this opportunity and help me decide how to position myself. Do not apply, send emails, or browse on my behalf.
 
@@ -258,7 +319,7 @@ Please return a concise GENERAL OPPORTUNITY ANALYSIS that I can paste into Gener
 1. A concise opportunity summary.
 2. Top requirements and keywords.
 3. Likely hiring-manager priorities.
-4. Resume tailoring suggestions.
-5. Interview prep topics.
-6. A safe, manually-sendable outreach draft I can edit before using.`;
+4. My likely strongest positioning.
+5. Gaps or concerns.
+6. Suggested next action.`;
 }
