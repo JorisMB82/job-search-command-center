@@ -225,10 +225,13 @@ export function DashboardClient() {
     return reasons.length ? { opportunity, reasons } : null;
   }).filter((item): item is { opportunity: Opportunity; reasons: string[] } => Boolean(item)).slice(0, 6);
 
+  const funnelCounts = ACTIVE_PIPELINE_STATUSES.map((status) => statusCount(opportunities, status));
+  const maxFunnelCount = Math.max(1, ...funnelCounts);
   const funnelStages = ACTIVE_PIPELINE_STATUSES.map((status) => {
     const count = statusCount(opportunities, status);
     const percent = metrics.total === 0 ? 0 : Math.round((count / metrics.total) * 100);
-    return { status, label: STATUS_LABELS[status], count, percent, width: metrics.total === 0 ? 100 : Math.max(56, percent) };
+    const width = metrics.total === 0 ? 100 : count === 0 ? 26 : Math.max(34, Math.round((count / maxFunnelCount) * 100));
+    return { status, label: STATUS_LABELS[status], count, percent, width };
   });
 
   const filteredOpportunities = opportunities.filter((opportunity) => {
