@@ -32,6 +32,28 @@ function uniqueTemplateNames(templates: ResumeTemplate[], currentBucket?: string
   return Array.from(new Set(names));
 }
 
+function normalizeTemplateKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/\bgeneral\b/g, "")
+    .replace(/\bresume\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findMatchingResumeTemplate(templates: ResumeTemplate[], bucket: string) {
+  const bucketName = bucket.trim();
+  const bucketKey = normalizeTemplateKey(bucketName);
+  const exact = templates.find((template) => template.name.trim().toLowerCase() === bucketName.toLowerCase());
+  if (exact) return exact;
+  return templates.find((template) => {
+    const templateKey = normalizeTemplateKey(template.name);
+    return templateKey === bucketKey || templateKey.includes(bucketKey) || bucketKey.includes(templateKey);
+  }) ?? null;
+}
+
 export function OpportunityDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
@@ -74,11 +96,10 @@ export function OpportunityDetailClient({ id }: { id: string }) {
 
   const matchingResumeTemplate = useMemo(() => {
     if (!opportunity) return null;
-    const exact = resumeTemplates.find((template) => template.name.trim().toLowerCase() === opportunity.role_bucket.trim().toLowerCase());
-    if (exact) return exact;
-    return resumeTemplates.find((template) => template.name.toLowerCase().includes(opportunity.role_bucket.toLowerCase())) ?? null;
+    return findMatchingResumeTemplate(resumeTemplates, opportunity.role_bucket);
   }, [opportunity, resumeTemplates]);
 
+  const templateMatchedByAlias = Boolean(opportunity && matchingResumeTemplate && matchingResumeTemplate.name.trim().toLowerCase() !== opportunity.role_bucket.trim().toLowerCase());
   const shortPrompt = opportunity ? buildShortOpportunityAnalysisPrompt(opportunity) : "";
   const fullPrompt = opportunity ? buildOpportunityAnalysisPrompt(opportunity) : "";
   const resumePrompt = opportunity && matchingResumeTemplate ? buildResumeTailoringPrompt(opportunity, matchingResumeTemplate) : "";
@@ -183,7 +204,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         <article className="card stack"><div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div><p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the full prompt.</p><textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." /></article>
       </section>
 
-      <section className="card stack"><div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>{matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</p> : <p className="error">No matching resume template found for this bucket. Select one of the saved resume templates above or add resume text under the Resume Templates section.</p>}{matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}{resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}{resumePrompt ? <pre>{resumePrompt}</pre> : null}</section>
+      <section className="card stack"><div className="row"><h2>Resume tailoring prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}>Copy resume prompt</button></div>{matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>{templateMatchedByAlias ? <>. Current bucket is <strong>{opportunity.role_bucket}</strong>, so the app is using the closest saved template. Select another saved template above if this is not the right fit.</> : <>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</>}</p> : <p className="error">No saved resume template matches the current bucket: <strong>{opportunity.role_bucket}</strong>. Select a saved template from the dropdown above or add resume text under the Resume Templates section.</p>}{matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}{resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}{resumePrompt ? <pre>{resumePrompt}</pre> : null}</section>
       <section className="card stack"><div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}>Copy short prompt</button></div><p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>{shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}<pre>{shortPrompt}</pre></section>
       <section className="card stack"><div className="row"><h2>Full ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}>Copy full prompt</button></div><p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>{fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}<pre>{fullPrompt}</pre></section>
       <section className="card stack"><h2>Job description</h2><p>{opportunity.job_description}</p></section>
