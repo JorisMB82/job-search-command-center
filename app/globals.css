@@ -136,7 +136,8 @@ html[data-theme="dark"] .bar-track { background: #1f2937; }
 .opportunities-panel { background: linear-gradient(180deg, color-mix(in srgb, var(--opportunity-panel) 92%, var(--panel)), var(--opportunity-panel)); border-color: var(--opportunity-border); border-left: 4px solid var(--opportunity-border); }
 .opportunities-search-box { background: color-mix(in srgb, var(--panel) 86%, var(--opportunity-panel)); border: 2px solid color-mix(in srgb, var(--opportunity-border) 76%, var(--border)); border-left: 4px solid var(--opportunity-border); border-radius: var(--radius-small); padding: 14px; display: grid; gap: 12px; box-shadow: 0 1px 0 rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.42); }
 html[data-theme="dark"] .opportunities-search-box { background: color-mix(in srgb, var(--panel) 82%, var(--opportunity-panel)); box-shadow: 0 1px 0 rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05); }
-.opportunities-scroll, .radar-scroll { display: grid; gap: 12px; max-height: 620px; overflow-y: auto; padding-right: 6px; scroll-padding: 12px; }
+.opportunities-scroll { display: grid; gap: 12px; max-height: 860px; overflow-y: auto; padding-right: 6px; scroll-padding: 12px; }
+.radar-scroll { display: grid; gap: 12px; max-height: 620px; overflow-y: auto; padding-right: 6px; scroll-padding: 12px; }
 .opportunities-scroll::-webkit-scrollbar, .radar-scroll::-webkit-scrollbar { width: 8px; }
 .opportunities-scroll::-webkit-scrollbar-track, .radar-scroll::-webkit-scrollbar-track { background: color-mix(in srgb, var(--opportunity-panel) 80%, var(--panel)); }
 .opportunities-scroll::-webkit-scrollbar-thumb, .radar-scroll::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--opportunity-border) 70%, var(--muted)); border-radius: 3px; }
