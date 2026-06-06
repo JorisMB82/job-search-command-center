@@ -4,8 +4,10 @@ import Link from "next/link";
 import { CSSProperties, useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
+type ClockDisplay = { time: string; date: string };
 
 const THEME_STORAGE_KEY = "jscc_theme";
+const MONTH_LABELS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "light";
@@ -19,20 +21,23 @@ function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
 }
 
-function formatHeaderDateTime(date: Date) {
+function formatHeaderClock(date: Date): ClockDisplay {
   const pad = (value: number) => String(value).padStart(2, "0");
-  const month = pad(date.getMonth() + 1);
-  const day = pad(date.getDate());
-  const year = String(date.getFullYear()).slice(-2);
   const hours = pad(date.getHours());
   const minutes = pad(date.getMinutes());
-  const seconds = pad(date.getSeconds());
-  return `${month}.${day}.${year} // ${hours}:${minutes}:${seconds}`;
+  const day = pad(date.getDate());
+  const month = MONTH_LABELS[date.getMonth()] ?? "---";
+  const year = date.getFullYear();
+
+  return {
+    time: `${hours}:${minutes}`,
+    date: `${day} ${month} ${year}`,
+  };
 }
 
 export function AppHeader() {
   const [theme, setTheme] = useState<Theme>("light");
-  const [clockText, setClockText] = useState("");
+  const [clock, setClock] = useState<ClockDisplay>({ time: "", date: "" });
 
   useEffect(() => {
     const initialTheme = getInitialTheme();
@@ -40,7 +45,7 @@ export function AppHeader() {
     applyTheme(initialTheme);
 
     function tick() {
-      setClockText(formatHeaderDateTime(new Date()));
+      setClock(formatHeaderClock(new Date()));
     }
 
     tick();
@@ -55,24 +60,57 @@ export function AppHeader() {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
   }
 
-  const clockStyle: CSSProperties = theme === "dark"
+  const clockPanelStyle: CSSProperties = theme === "dark"
     ? {
-        color: "#ff4f8b",
-        border: "1px solid #ff4f8b",
-        borderRadius: "4px",
-        padding: "4px 8px",
-        fontVariantNumeric: "tabular-nums",
-        fontWeight: 800,
-        letterSpacing: "0.08em",
-        textShadow: "0 0 10px rgba(255, 79, 139, 0.72)",
-        boxShadow: "0 0 12px rgba(255, 79, 139, 0.26)",
+        display: "inline-grid",
+        justifyItems: "center",
+        minWidth: "128px",
+        padding: "7px 12px 6px",
+        borderRadius: "10px",
+        border: "2px solid #8f6426",
+        background: "linear-gradient(180deg, #2a2620 0%, #101010 42%, #050505 100%)",
+        boxShadow: "inset 0 2px 5px rgba(255, 210, 120, 0.08), inset 0 -3px 7px rgba(0, 0, 0, 0.75), 0 0 14px rgba(255, 135, 0, 0.18)",
+        lineHeight: 1,
         whiteSpace: "nowrap",
       }
     : {
+        display: "inline-grid",
+        justifyItems: "center",
+        minWidth: "108px",
         color: "#5f6675",
         fontVariantNumeric: "tabular-nums",
         fontWeight: 700,
         whiteSpace: "nowrap",
+      };
+
+  const clockTimeStyle: CSSProperties = theme === "dark"
+    ? {
+        color: "#ff8a00",
+        fontFamily: "'Courier New', 'Lucida Console', monospace",
+        fontSize: "1.42rem",
+        fontWeight: 900,
+        letterSpacing: "0.08em",
+        textShadow: "0 0 4px rgba(255, 138, 0, 0.82), 0 0 12px rgba(255, 138, 0, 0.3)",
+        fontVariantNumeric: "tabular-nums",
+      }
+    : {
+        fontVariantNumeric: "tabular-nums",
+      };
+
+  const clockDateStyle: CSSProperties = theme === "dark"
+    ? {
+        marginTop: "4px",
+        color: "#ffc266",
+        fontFamily: "'Courier New', 'Lucida Console', monospace",
+        fontSize: "0.58rem",
+        fontWeight: 800,
+        letterSpacing: "0.14em",
+        textTransform: "uppercase",
+        textShadow: "0 0 5px rgba(255, 194, 102, 0.4)",
+      }
+    : {
+        fontSize: "0.72rem",
+        color: "#5f6675",
       };
 
   return (
@@ -80,7 +118,12 @@ export function AppHeader() {
       <div className="header-inner">
         <div className="row">
           <strong>JSCC</strong>
-          {clockText ? <span aria-label="Current local date and time" style={clockStyle}>{clockText}</span> : null}
+          {clock.time ? (
+            <span aria-label="Current local date and time" style={clockPanelStyle}>
+              <span style={clockTimeStyle}>{clock.time}</span>
+              <span style={clockDateStyle}>{clock.date}</span>
+            </span>
+          ) : null}
         </div>
         <nav className="nav" aria-label="Primary navigation">
           <Link href="/">Dashboard</Link>
