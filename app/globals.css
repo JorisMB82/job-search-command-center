@@ -128,6 +128,10 @@ html[data-theme="dark"] .bar-track { background: #1f2937; }
 .attention-list { display: grid; gap: 9px; }
 .attention-item { border: 1px solid var(--attention-border); border-left: 4px solid var(--warning); border-radius: var(--radius-small); padding: 12px; background: var(--attention-bg); }
 .attention-note { color: var(--warning); font-weight: 700; font-size: 0.9rem; }
+.pinned-card { cursor: grab; transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease; }
+.pinned-card:active { cursor: grabbing; }
+.pinned-card.drag-over { border-color: var(--primary); background: color-mix(in srgb, var(--panel-soft) 82%, var(--soft)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent), 0 14px 28px var(--shadow); transform: translateY(-1px); }
+.drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-control); background: color-mix(in srgb, var(--soft) 80%, var(--panel)); color: var(--primary); font-weight: 800; cursor: grab; user-select: none; }
 .opportunity-workspace { align-items: start; }
 .opportunities-panel { background: linear-gradient(180deg, color-mix(in srgb, var(--opportunity-panel) 92%, var(--panel)), var(--opportunity-panel)); border-color: var(--opportunity-border); border-left: 4px solid var(--opportunity-border); }
 .opportunities-search-box { background: color-mix(in srgb, var(--panel) 86%, var(--opportunity-panel)); border: 2px solid color-mix(in srgb, var(--opportunity-border) 76%, var(--border)); border-left: 4px solid var(--opportunity-border); border-radius: var(--radius-small); padding: 14px; display: grid; gap: 12px; box-shadow: 0 1px 0 rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.42); }
