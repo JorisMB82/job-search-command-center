@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CopyIcon } from "./CopyIcon";
-import { buildOpportunityAnalysisPrompt, buildResumeTailoringPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
+import { buildOpportunityAnalysisPrompt, buildOutreachDraftPrompt, buildResumeTailoringPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
 import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
 
@@ -63,6 +63,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   const [shortPromptCopied, setShortPromptCopied] = useState(false);
   const [fullPromptCopied, setFullPromptCopied] = useState(false);
   const [resumePromptCopied, setResumePromptCopied] = useState(false);
+  const [outreachPromptCopied, setOutreachPromptCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [interviewPrepNotes, setInterviewPrepNotes] = useState("");
   const [resumeTailoringNotes, setResumeTailoringNotes] = useState("");
@@ -104,6 +105,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   const shortPrompt = opportunity ? buildShortOpportunityAnalysisPrompt(opportunity) : "";
   const fullPrompt = opportunity ? buildOpportunityAnalysisPrompt(opportunity) : "";
   const resumePrompt = opportunity && matchingResumeTemplate ? buildResumeTailoringPrompt(opportunity, matchingResumeTemplate) : "";
+  const outreachPrompt = opportunity ? buildOutreachDraftPrompt(opportunity, matchingResumeTemplate) : "";
 
   async function copyShortPrompt() {
     if (!shortPrompt || typeof navigator === "undefined") return;
@@ -111,6 +113,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     setShortPromptCopied(true);
     setFullPromptCopied(false);
     setResumePromptCopied(false);
+    setOutreachPromptCopied(false);
   }
 
   async function copyFullPrompt() {
@@ -119,6 +122,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     setFullPromptCopied(true);
     setShortPromptCopied(false);
     setResumePromptCopied(false);
+    setOutreachPromptCopied(false);
   }
 
   async function copyResumePrompt() {
@@ -127,6 +131,16 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     setResumePromptCopied(true);
     setShortPromptCopied(false);
     setFullPromptCopied(false);
+    setOutreachPromptCopied(false);
+  }
+
+  async function copyOutreachPrompt() {
+    if (!outreachPrompt || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(outreachPrompt);
+    setOutreachPromptCopied(true);
+    setShortPromptCopied(false);
+    setFullPromptCopied(false);
+    setResumePromptCopied(false);
   }
 
   async function updateOpportunity(update: OpportunityUpdate) {
@@ -183,6 +197,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   return (
     <>
       <section className="card stack">
+        <p className="muted"><strong>Opportunity Detail</strong></p>
         <div className="row"><h1>{opportunity.role}</h1><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
         <p><strong>{opportunity.company}</strong>{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
         <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAge(opportunity.created_at)})</p>
@@ -209,7 +224,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       <section className="card stack"><div className="row"><h2>Short ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}><CopyIcon />Copy short prompt</button></div><p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>{shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}<pre>{shortPrompt}</pre></section>
       <section className="card stack"><div className="row"><h2>Full ChatGPT prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}><CopyIcon />Copy full prompt</button></div><p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>{fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}<pre>{fullPrompt}</pre></section>
       <section className="card stack"><h2>Job description</h2><p>{opportunity.job_description}</p></section>
-      <section className="card stack"><h2>Save outreach draft</h2><p className="muted">Drafts are saved only. The app never auto-sends emails or messages.</p><form className="stack" onSubmit={saveDraft}><label>Recipient<input value={draft.recipient ?? ""} onChange={(event) => setDraft({ ...draft, recipient: event.target.value })} /></label><label>Channel<input value={draft.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} /></label><label>Subject<input value={draft.subject ?? ""} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} /></label><label>Body<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} required /></label><button type="submit">Save draft</button></form></section>
+      <section className="card stack"><div className="row"><h2>Save outreach draft</h2><button className="secondary" type="button" onClick={copyOutreachPrompt} disabled={!outreachPrompt}><CopyIcon />Copy outreach prompt</button></div><p className="muted">Drafts are saved only. The app never auto-sends emails or messages. Paste the outreach prompt into ChatGPT Plus, then paste the returned subject and body below.</p>{outreachPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned email into the fields below.</p> : null}<form className="stack" onSubmit={saveDraft}><label>Recipient<input value={draft.recipient ?? ""} onChange={(event) => setDraft({ ...draft, recipient: event.target.value })} /></label><label>Channel<input value={draft.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} /></label><label>Subject<input value={draft.subject ?? ""} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} placeholder="Paste the recommended subject line here." /></label><label>Body<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} placeholder="Paste the outreach email body here after reviewing it." required /></label><button type="submit">Save draft</button></form></section>
       <section className="card stack"><h2>Delete opportunity</h2><p className="muted">Use delete only for duplicates, test entries, or mistakes. For real opportunities, prefer changing status to Closed / Archived.</p>{!confirmDelete ? <button className="danger" type="button" onClick={() => setConfirmDelete(true)}>Delete opportunity</button> : <div className="row"><button className="danger" type="button" onClick={() => void deleteOpportunity()}>Confirm delete permanently</button><button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section>
     </>
   );
