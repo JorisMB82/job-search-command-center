@@ -10,7 +10,11 @@ export async function GET() {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   try {
-    const { data, error } = await (supabase as any).from("radar_sources").select("*").order("updated_at", { ascending: false });
+    const { data, error } = await (supabase as any)
+      .from("radar_sources")
+      .select("*")
+      .order("is_active", { ascending: false })
+      .order("name", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ data });
   } catch (error) {
