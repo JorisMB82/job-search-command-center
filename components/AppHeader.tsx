@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
@@ -19,13 +19,33 @@ function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
 }
 
+function formatHeaderDateTime(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const year = String(date.getFullYear()).slice(-2);
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  return `${month}.${day}.${year} // ${hours}:${minutes}:${seconds}`;
+}
+
 export function AppHeader() {
   const [theme, setTheme] = useState<Theme>("light");
+  const [clockText, setClockText] = useState("");
 
   useEffect(() => {
     const initialTheme = getInitialTheme();
     setTheme(initialTheme);
     applyTheme(initialTheme);
+
+    function tick() {
+      setClockText(formatHeaderDateTime(new Date()));
+    }
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   function toggleTheme() {
@@ -35,10 +55,33 @@ export function AppHeader() {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
   }
 
+  const clockStyle: CSSProperties = theme === "dark"
+    ? {
+        color: "#ff4f8b",
+        border: "1px solid #ff4f8b",
+        borderRadius: "4px",
+        padding: "4px 8px",
+        fontVariantNumeric: "tabular-nums",
+        fontWeight: 800,
+        letterSpacing: "0.08em",
+        textShadow: "0 0 10px rgba(255, 79, 139, 0.72)",
+        boxShadow: "0 0 12px rgba(255, 79, 139, 0.26)",
+        whiteSpace: "nowrap",
+      }
+    : {
+        color: "#5f6675",
+        fontVariantNumeric: "tabular-nums",
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      };
+
   return (
     <header className="header">
       <div className="header-inner">
-        <strong>Job Search Command Center</strong>
+        <div className="row">
+          <strong>JSCC</strong>
+          {clockText ? <span aria-label="Current local date and time" style={clockStyle}>{clockText}</span> : null}
+        </div>
         <nav className="nav" aria-label="Primary navigation">
           <Link href="/">Dashboard</Link>
           <Link href="/radar">Opportunity Radar</Link>
