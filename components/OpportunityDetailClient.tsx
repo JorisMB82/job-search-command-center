@@ -186,10 +186,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     });
     const payload = (await response.json()) as { error?: string };
     if (!response.ok || payload.error) setMessage(payload.error ?? "Could not save outreach draft.");
-    else {
-      setMessage("Outreach draft saved. Nothing was sent automatically.");
-      setDraft({ opportunity_id: id, recipient: "", channel: "email", subject: "", body: "" });
-    }
+    else setMessage("Outreach draft saved and kept visible for review. Nothing was sent automatically.");
   }
 
   if (!opportunity) return <section className="card"><p>{message || "Loading opportunity..."}</p></section>;
