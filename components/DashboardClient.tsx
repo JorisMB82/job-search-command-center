@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { DragEvent, FormEvent } from "react";
 import type { Opportunity, OpportunityInsert, OpportunityPriority, OpportunityStatus, ResumeTemplate } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
+
+const PINNED_ORDER_STORAGE_KEY = "job-search-command-center:pinned-order-v1";
 
 const emptyDraft: OpportunityInsert = {
   company: "",
@@ -55,6 +58,36 @@ function formatAgeFrom(value: string | null | undefined) {
 function formatPercent(value: number, total: number) {
   if (total === 0) return "0%";
   return `${Math.round((value / total) * 100)}%`;
+}
+
+function readPinnedOrder() {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PINNED_ORDER_STORAGE_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePinnedOrder(order: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PINNED_ORDER_STORAGE_KEY, JSON.stringify(order));
+}
+
+function reconcilePinnedOrder(pinnedIds: string[], savedOrder: string[]) {
+  const savedPinnedIds = savedOrder.filter((id) => pinnedIds.includes(id));
+  const newPinnedIds = pinnedIds.filter((id) => !savedPinnedIds.includes(id));
+  return [...savedPinnedIds, ...newPinnedIds];
+}
+
+function reorderPinnedIds(ids: string[], sourceId: string, targetId: string, position: "before" | "after") {
+  if (sourceId === targetId) return ids;
+  const withoutSource = ids.filter((id) => id !== sourceId);
+  const targetIndex = withoutSource.indexOf(targetId);
+  if (targetIndex === -1) return ids;
+  const insertIndex = position === "after" ? targetIndex + 1 : targetIndex;
+  return [...withoutSource.slice(0, insertIndex), sourceId, ...withoutSource.slice(insertIndex)];
 }
 
 function uniqueBucketNames(templates: ResumeTemplate[], opportunities: Opportunity[] = [], currentBucket?: string | null) {
@@ -121,6 +154,9 @@ export function DashboardClient() {
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [pinnedOrder, setPinnedOrder] = useState<string[]>([]);
+  const [draggedPinnedId, setDraggedPinnedId] = useState<string | null>(null);
+  const [dragOverPinnedId, setDragOverPinnedId] = useState<string | null>(null);
 
   async function loadOpportunities() {
     const [opportunitiesResponse, templatesResponse] = await Promise.all([
@@ -145,6 +181,7 @@ export function DashboardClient() {
   }
 
   useEffect(() => { void loadOpportunities(); }, []);
+  useEffect(() => { setPinnedOrder(readPinnedOrder()); }, []);
 
   const bucketOptions = useMemo(() => uniqueBucketNames(resumeTemplates, opportunities, draft.role_bucket), [resumeTemplates, opportunities, draft.role_bucket]);
 
@@ -186,6 +223,12 @@ export function DashboardClient() {
     await loadOpportunities();
   }
 
+  function savePinnedOrder(nextOrder: string[], confirmation?: string) {
+    setPinnedOrder(nextOrder);
+    writePinnedOrder(nextOrder);
+    if (confirmation) setMessage(confirmation);
+  }
+
   async function patchOpportunity(id: string, update: Partial<OpportunityInsert>) {
     const response = await fetch(`/api/opportunities/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(update) });
     const payload = (await response.json()) as { data?: Opportunity; error?: string };
@@ -193,7 +236,43 @@ export function DashboardClient() {
       setMessage(payload.error ?? "Could not update opportunity.");
       return;
     }
-    setOpportunities((current) => current.map((opportunity) => opportunity.id === id ? payload.data as Opportunity : opportunity));
+
+    const updatedOpportunity = payload.data as Opportunity;
+    setOpportunities((current) => current.map((opportunity) => opportunity.id === id ? updatedOpportunity : opportunity));
+
+    if (update.is_pinned !== undefined) {
+      setPinnedOrder((current) => {
+        const nextOrder = updatedOpportunity.is_pinned
+          ? [updatedOpportunity.id, ...current.filter((pinnedId) => pinnedId !== updatedOpportunity.id)]
+          : current.filter((pinnedId) => pinnedId !== updatedOpportunity.id);
+        writePinnedOrder(nextOrder);
+        return nextOrder;
+      });
+    }
+  }
+
+  function handlePinnedDragStart(event: DragEvent<HTMLElement>, opportunityId: string) {
+    setDraggedPinnedId(opportunityId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", opportunityId);
+  }
+
+  function handlePinnedDrop(event: DragEvent<HTMLElement>, targetId: string) {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData("text/plain") || draggedPinnedId;
+    if (!sourceId || sourceId === targetId) {
+      setDraggedPinnedId(null);
+      setDragOverPinnedId(null);
+      return;
+    }
+
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    const position = event.clientY > targetRect.top + targetRect.height / 2 ? "after" : "before";
+    const currentOrder = orderedPinnedOpportunities.map((opportunity) => opportunity.id);
+    const nextOrder = reorderPinnedIds(currentOrder, sourceId, targetId, position);
+    savePinnedOrder(nextOrder, "Pinned Top 5 order updated. Order is saved in this browser.");
+    setDraggedPinnedId(null);
+    setDragOverPinnedId(null);
   }
 
   function clearFilters() {
@@ -218,7 +297,16 @@ export function DashboardClient() {
 
   const bucketCounts = bucketOptions.map((bucket) => ({ bucket, count: opportunities.filter((opportunity) => opportunity.role_bucket === bucket).length }));
   const maxBucketCount = Math.max(1, ...bucketCounts.map((item) => item.count));
-  const pinnedOpportunities = opportunities.filter((opportunity) => opportunity.is_pinned).slice(0, 5);
+
+  const orderedPinnedOpportunities = useMemo(() => {
+    const pinned = opportunities.filter((opportunity) => opportunity.is_pinned);
+    const pinnedIds = pinned.map((opportunity) => opportunity.id);
+    const reconciledOrder = reconcilePinnedOrder(pinnedIds, pinnedOrder);
+    const orderIndex = new Map(reconciledOrder.map((id, index) => [id, index]));
+    return [...pinned].sort((a, b) => (orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+  }, [opportunities, pinnedOrder]);
+
+  const pinnedOpportunities = orderedPinnedOpportunities.slice(0, 5);
 
   const attentionItems = activeOpportunities.map((opportunity) => {
     const reasons = getAttentionReasons(opportunity, today);
@@ -264,8 +352,8 @@ export function DashboardClient() {
 
           <section className="card stack">
             <h2>Pinned Top 5</h2>
-            <p className="muted">Keep the roles that deserve extra effort, warm-intro search, and tighter follow-up here.</p>
-            {pinnedOpportunities.length === 0 ? <p className="muted">No pinned opportunities yet.</p> : pinnedOpportunities.map((opportunity) => <article className="mini-card" key={opportunity.id}><div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}
+            <p className="muted">Drag cards to reorder this short list. Order is saved in this browser.</p>
+            {pinnedOpportunities.length === 0 ? <p className="muted">No pinned opportunities yet.</p> : pinnedOpportunities.map((opportunity) => <article className={`mini-card pinned-card${dragOverPinnedId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} draggable onDragStart={(event) => handlePinnedDragStart(event, opportunity.id)} onDragOver={(event) => { event.preventDefault(); setDragOverPinnedId(opportunity.id); }} onDragLeave={() => setDragOverPinnedId(null)} onDrop={(event) => handlePinnedDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPinnedId(null); setDragOverPinnedId(null); }} aria-label={`Pinned opportunity: ${opportunity.role}. Drag to reorder.`}><div className="row"><span className="drag-handle" aria-hidden="true">↕</span><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}
           </section>
 
           <section className="card stack"><h2>Resume template map</h2><p className="muted">Shows market volume by saved resume version. Keep template names aligned with how you want prompts matched.</p>{bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}</section>
