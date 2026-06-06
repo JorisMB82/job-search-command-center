@@ -226,7 +226,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       <section className="card stack"><h2>Job description</h2><p>{opportunity.job_description}</p></section>
       <section className="card stack">
         <div className="row"><h2>Step 3 — Prepare outreach draft</h2><button className="secondary" type="button" onClick={copyOutreachPrompt} disabled={!outreachPrompt}><CopyIcon />Copy ChatGPT outreach prompt</button></div>
-        <p className="muted">Use this sequence: 1) copy the ChatGPT outreach prompt, 2) paste it into ChatGPT Plus, 3) paste ChatGPT's final subject and message into the blank fields below, then save. Nothing is sent automatically.</p>
+        <p className="muted">Use this sequence: 1) copy the ChatGPT outreach prompt, 2) paste it into ChatGPT Plus, 3) paste the final subject and message from ChatGPT into the blank fields below, then save. Nothing is sent automatically.</p>
         {outreachPromptCopied ? <p className="muted">Copied. The prompt is now on your clipboard. Paste it into ChatGPT Plus; do not paste it into the draft fields below.</p> : null}
         <details className="stack">
           <summary>Preview the ChatGPT outreach prompt being copied</summary>
@@ -235,8 +235,8 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         <form className="stack" onSubmit={saveDraft}>
           <label>Recipient / contact name or email<input value={draft.recipient ?? ""} onChange={(event) => setDraft({ ...draft, recipient: event.target.value })} placeholder="Optional: hiring manager, recruiter, or contact email." /></label>
           <label>Channel<input value={draft.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} /></label>
-          <label>Final subject to save<input value={draft.subject ?? ""} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} placeholder="Paste ChatGPT's final subject line here." /></label>
-          <label>Final message body to save<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} placeholder="Paste ChatGPT's final outreach email or message here after reviewing it." required /></label>
+          <label>Final subject to save<input value={draft.subject ?? ""} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} placeholder="Paste the final subject line from ChatGPT here." /></label>
+          <label>Final message body to save<textarea value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} placeholder="Paste the final outreach email or message from ChatGPT here after reviewing it." required /></label>
           <button type="submit">Save draft</button>
         </form>
       </section>
