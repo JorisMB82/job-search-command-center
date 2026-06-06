@@ -6,7 +6,8 @@ import type { DragEvent, FormEvent } from "react";
 import type { Opportunity, OpportunityInsert, OpportunityPriority, OpportunityStatus, ResumeTemplate } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
 
-const PINNED_ORDER_STORAGE_KEY = "job-search-command-center:pinned-order-v1";
+const PRIORITY_ORDER_STORAGE_KEY = "job-search-command-center:priority-order-v1";
+const LEGACY_PINNED_ORDER_STORAGE_KEY = "job-search-command-center:pinned-order-v1";
 
 const emptyDraft: OpportunityInsert = {
   company: "",
@@ -31,6 +32,7 @@ const emptyDraft: OpportunityInsert = {
 const ACTIVE_PIPELINE_STATUSES: OpportunityStatus[] = ["new", "selected", "researching", "outreach_drafted", "outreach_sent", "follow_up_due", "applied", "interviewing", "offer"];
 const CLOSED_STATUSES: OpportunityStatus[] = ["closed", "rejected"];
 const APPLICATION_PROGRESS_STATUSES: OpportunityStatus[] = ["outreach_drafted", "outreach_sent", "follow_up_due", "applied", "interviewing", "offer"];
+const PRIORITY_QUEUE_STATUSES: OpportunityStatus[] = ["outreach_drafted", "outreach_sent", "follow_up_due", "interviewing", "offer"];
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -60,28 +62,33 @@ function formatPercent(value: number, total: number) {
   return `${Math.round((value / total) * 100)}%`;
 }
 
-function readPinnedOrder() {
+function readStoredOrder(key: string) {
   if (typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(PINNED_ORDER_STORAGE_KEY) ?? "[]");
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "[]");
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return [];
   }
 }
 
-function writePinnedOrder(order: string[]) {
+function readPriorityOrder() {
+  const priorityOrder = readStoredOrder(PRIORITY_ORDER_STORAGE_KEY);
+  return priorityOrder.length ? priorityOrder : readStoredOrder(LEGACY_PINNED_ORDER_STORAGE_KEY);
+}
+
+function writePriorityOrder(order: string[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(PINNED_ORDER_STORAGE_KEY, JSON.stringify(order));
+  window.localStorage.setItem(PRIORITY_ORDER_STORAGE_KEY, JSON.stringify(order));
 }
 
-function reconcilePinnedOrder(pinnedIds: string[], savedOrder: string[]) {
-  const savedPinnedIds = savedOrder.filter((id) => pinnedIds.includes(id));
-  const newPinnedIds = pinnedIds.filter((id) => !savedPinnedIds.includes(id));
-  return [...savedPinnedIds, ...newPinnedIds];
+function reconcilePriorityOrder(candidateIds: string[], savedOrder: string[]) {
+  const savedCandidateIds = savedOrder.filter((id) => candidateIds.includes(id));
+  const newCandidateIds = candidateIds.filter((id) => !savedCandidateIds.includes(id));
+  return [...savedCandidateIds, ...newCandidateIds];
 }
 
-function reorderPinnedIds(ids: string[], sourceId: string, targetId: string, position: "before" | "after") {
+function reorderPriorityIds(ids: string[], sourceId: string, targetId: string, position: "before" | "after") {
   if (sourceId === targetId) return ids;
   const withoutSource = ids.filter((id) => id !== sourceId);
   const targetIndex = withoutSource.indexOf(targetId);
@@ -132,6 +139,10 @@ function getAttentionReasons(opportunity: Opportunity, today: string) {
   return reasons;
 }
 
+function isPriorityQueueCandidate(opportunity: Opportunity, attentionReasons: string[]) {
+  return opportunity.is_pinned || attentionReasons.length > 0 || PRIORITY_QUEUE_STATUSES.includes(opportunity.status);
+}
+
 function Bar({ label, value, max }: { label: string; value: number; max: number }) {
   const width = max > 0 ? Math.max(8, Math.round((value / max) * 100)) : 0;
   return <div className="bar-row"><div className="bar-label"><span>{label}</span><strong>{value}</strong></div><div className="bar-track"><div className="bar-fill" style={{ width: `${width}%` }} /></div></div>;
@@ -151,12 +162,11 @@ export function DashboardClient() {
   const [bucketFilter, setBucketFilter] = useState<string | "all">("all");
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
   const [priorityFilter, setPriorityFilter] = useState<OpportunityPriority | "all">("all");
-  const [pinnedOnly, setPinnedOnly] = useState(false);
-  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [showPriorityItems, setShowPriorityItems] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [pinnedOrder, setPinnedOrder] = useState<string[]>([]);
-  const [draggedPinnedId, setDraggedPinnedId] = useState<string | null>(null);
-  const [dragOverPinnedId, setDragOverPinnedId] = useState<string | null>(null);
+  const [priorityOrder, setPriorityOrder] = useState<string[]>([]);
+  const [draggedPriorityId, setDraggedPriorityId] = useState<string | null>(null);
+  const [dragOverPriorityId, setDragOverPriorityId] = useState<string | null>(null);
 
   async function loadOpportunities() {
     const [opportunitiesResponse, templatesResponse] = await Promise.all([
@@ -181,7 +191,7 @@ export function DashboardClient() {
   }
 
   useEffect(() => { void loadOpportunities(); }, []);
-  useEffect(() => { setPinnedOrder(readPinnedOrder()); }, []);
+  useEffect(() => { setPriorityOrder(readPriorityOrder()); }, []);
 
   const bucketOptions = useMemo(() => uniqueBucketNames(resumeTemplates, opportunities, draft.role_bucket), [resumeTemplates, opportunities, draft.role_bucket]);
 
@@ -223,9 +233,9 @@ export function DashboardClient() {
     await loadOpportunities();
   }
 
-  function savePinnedOrder(nextOrder: string[], confirmation?: string) {
-    setPinnedOrder(nextOrder);
-    writePinnedOrder(nextOrder);
+  function savePriorityOrder(nextOrder: string[], confirmation?: string) {
+    setPriorityOrder(nextOrder);
+    writePriorityOrder(nextOrder);
     if (confirmation) setMessage(confirmation);
   }
 
@@ -241,46 +251,49 @@ export function DashboardClient() {
     setOpportunities((current) => current.map((opportunity) => opportunity.id === id ? updatedOpportunity : opportunity));
 
     if (update.is_pinned !== undefined) {
-      setPinnedOrder((current) => {
+      setPriorityOrder((current) => {
+        const withoutCurrent = current.filter((priorityId) => priorityId !== updatedOpportunity.id);
+        const stillPriority = isPriorityQueueCandidate(updatedOpportunity, getAttentionReasons(updatedOpportunity, today));
         const nextOrder = updatedOpportunity.is_pinned
-          ? [updatedOpportunity.id, ...current.filter((pinnedId) => pinnedId !== updatedOpportunity.id)]
-          : current.filter((pinnedId) => pinnedId !== updatedOpportunity.id);
-        writePinnedOrder(nextOrder);
+          ? [updatedOpportunity.id, ...withoutCurrent]
+          : stillPriority
+            ? [...withoutCurrent, updatedOpportunity.id]
+            : withoutCurrent;
+        writePriorityOrder(nextOrder);
         return nextOrder;
       });
     }
   }
 
-  function handlePinnedDragStart(event: DragEvent<HTMLElement>, opportunityId: string) {
-    setDraggedPinnedId(opportunityId);
+  function handlePriorityDragStart(event: DragEvent<HTMLElement>, opportunityId: string) {
+    setDraggedPriorityId(opportunityId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", opportunityId);
   }
 
-  function handlePinnedDrop(event: DragEvent<HTMLElement>, targetId: string) {
+  function handlePriorityDrop(event: DragEvent<HTMLElement>, targetId: string) {
     event.preventDefault();
-    const sourceId = event.dataTransfer.getData("text/plain") || draggedPinnedId;
+    const sourceId = event.dataTransfer.getData("text/plain") || draggedPriorityId;
     if (!sourceId || sourceId === targetId) {
-      setDraggedPinnedId(null);
-      setDragOverPinnedId(null);
+      setDraggedPriorityId(null);
+      setDragOverPriorityId(null);
       return;
     }
 
     const targetRect = event.currentTarget.getBoundingClientRect();
     const position = event.clientY > targetRect.top + targetRect.height / 2 ? "after" : "before";
-    const currentOrder = orderedPinnedOpportunities.map((opportunity) => opportunity.id);
-    const nextOrder = reorderPinnedIds(currentOrder, sourceId, targetId, position);
-    savePinnedOrder(nextOrder, "Pinned Top 5 order updated. Order is saved in this browser.");
-    setDraggedPinnedId(null);
-    setDragOverPinnedId(null);
+    const currentOrder = priorityQueueItems.map(({ opportunity }) => opportunity.id);
+    const nextOrder = reorderPriorityIds(currentOrder, sourceId, targetId, position);
+    savePriorityOrder(nextOrder, "Priority Queue order updated. Order is saved in this browser.");
+    setDraggedPriorityId(null);
+    setDragOverPriorityId(null);
   }
 
   function clearFilters() {
     setBucketFilter("all");
     setStatusFilter("all");
     setPriorityFilter("all");
-    setPinnedOnly(false);
-    setAttentionOnly(false);
+    setShowPriorityItems(false);
     setSearchTerm("");
   }
 
@@ -298,20 +311,25 @@ export function DashboardClient() {
   const bucketCounts = bucketOptions.map((bucket) => ({ bucket, count: opportunities.filter((opportunity) => opportunity.role_bucket === bucket).length }));
   const maxBucketCount = Math.max(1, ...bucketCounts.map((item) => item.count));
 
-  const orderedPinnedOpportunities = useMemo(() => {
-    const pinned = opportunities.filter((opportunity) => opportunity.is_pinned);
-    const pinnedIds = pinned.map((opportunity) => opportunity.id);
-    const reconciledOrder = reconcilePinnedOrder(pinnedIds, pinnedOrder);
-    const orderIndex = new Map(reconciledOrder.map((id, index) => [id, index]));
-    return [...pinned].sort((a, b) => (orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER));
-  }, [opportunities, pinnedOrder]);
+  const priorityQueueItems = useMemo(() => {
+    const candidateMap = new Map<string, { opportunity: Opportunity; reasons: string[] }>();
+    activeOpportunities.forEach((opportunity) => {
+      const reasons = getAttentionReasons(opportunity, today);
+      if (isPriorityQueueCandidate(opportunity, reasons)) candidateMap.set(opportunity.id, { opportunity, reasons });
+    });
 
-  const pinnedOpportunities = orderedPinnedOpportunities.slice(0, 5);
+    const candidateIds = Array.from(candidateMap.keys());
+    const pinnedIds = activeOpportunities.filter((opportunity) => opportunity.is_pinned).map((opportunity) => opportunity.id);
+    const seededOrder = priorityOrder.length ? priorityOrder : pinnedIds;
+    const orderedIds = reconcilePriorityOrder(candidateIds, seededOrder);
 
-  const attentionItems = activeOpportunities.map((opportunity) => {
-    const reasons = getAttentionReasons(opportunity, today);
-    return reasons.length ? { opportunity, reasons } : null;
-  }).filter((item): item is { opportunity: Opportunity; reasons: string[] } => Boolean(item)).slice(0, 6);
+    return orderedIds
+      .map((id) => candidateMap.get(id))
+      .filter((item): item is { opportunity: Opportunity; reasons: string[] } => Boolean(item));
+  }, [activeOpportunities, priorityOrder, today]);
+
+  const priorityQueueIds = useMemo(() => new Set(priorityQueueItems.map(({ opportunity }) => opportunity.id)), [priorityQueueItems]);
+  const otherOpportunityCount = opportunities.filter((opportunity) => !priorityQueueIds.has(opportunity.id)).length;
 
   const funnelCounts = ACTIVE_PIPELINE_STATUSES.map((status) => statusCount(opportunities, status));
   const maxFunnelCount = Math.max(1, ...funnelCounts);
@@ -323,12 +341,11 @@ export function DashboardClient() {
   });
 
   const filteredOpportunities = opportunities.filter((opportunity) => {
+    if (!showPriorityItems && priorityQueueIds.has(opportunity.id)) return false;
     if (!matchesSearch(opportunity, searchTerm)) return false;
     if (bucketFilter !== "all" && opportunity.role_bucket !== bucketFilter) return false;
     if (statusFilter !== "all" && opportunity.status !== statusFilter) return false;
     if (priorityFilter !== "all" && opportunity.priority !== priorityFilter) return false;
-    if (pinnedOnly && !opportunity.is_pinned) return false;
-    if (attentionOnly && getAttentionReasons(opportunity, today).length === 0) return false;
     return true;
   });
 
@@ -345,15 +362,9 @@ export function DashboardClient() {
       <div className="dashboard-overview">
         <div className="dashboard-side stack">
           <section className="card stack">
-            <h2>Needs attention</h2>
-            <p className="muted">Overdue, stale, old-listing, or high-priority opportunities that should not slip.</p>
-            {attentionItems.length === 0 ? <p className="muted">Nothing needs attention right now.</p> : <div className="attention-list">{attentionItems.map(({ opportunity, reasons }) => <article className="attention-item" key={opportunity.id}><div className="row"><strong>{opportunity.company}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div><p>{opportunity.role}</p><p className="muted">{reasons.join(" · ")}</p><Link href={`/opportunities/${opportunity.id}`}>Review</Link></article>)}</div>}
-          </section>
-
-          <section className="card stack">
-            <h2>Pinned Top 5</h2>
-            <p className="muted">Drag cards to reorder this short list. Order is saved in this browser.</p>
-            {pinnedOpportunities.length === 0 ? <p className="muted">No pinned opportunities yet.</p> : pinnedOpportunities.map((opportunity) => <article className={`mini-card pinned-card${dragOverPinnedId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} draggable onDragStart={(event) => handlePinnedDragStart(event, opportunity.id)} onDragOver={(event) => { event.preventDefault(); setDragOverPinnedId(opportunity.id); }} onDragLeave={() => setDragOverPinnedId(null)} onDrop={(event) => handlePinnedDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPinnedId(null); setDragOverPinnedId(null); }} aria-label={`Pinned opportunity: ${opportunity.role}. Drag to reorder.`}><div className="row"><span className="drag-handle" aria-hidden="true">↕</span><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span><span className="badge warning">{PRIORITY_LABELS[opportunity.priority]}</span></div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}
+            <h2>Priority Queue</h2>
+            <p className="muted">Pinned, needs-attention, and active-stage opportunities. Drag cards to reorder this working list.</p>
+            {priorityQueueItems.length === 0 ? <p className="muted">No priority items right now.</p> : <div className="priority-list">{priorityQueueItems.map(({ opportunity, reasons }) => <article className={`mini-card pinned-card priority-card${dragOverPriorityId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} draggable onDragStart={(event) => handlePriorityDragStart(event, opportunity.id)} onDragOver={(event) => { event.preventDefault(); setDragOverPriorityId(opportunity.id); }} onDragLeave={() => setDragOverPriorityId(null)} onDrop={(event) => handlePriorityDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPriorityId(null); setDragOverPriorityId(null); }} aria-label={`Priority opportunity: ${opportunity.role}. Drag to reorder.`}><div className="row"><span className="drag-handle" aria-hidden="true">↕</span><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.priority === "high" ? <span className="badge warning">High</span> : null}{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}</div>}
           </section>
 
           <section className="card stack"><h2>Resume template map</h2><p className="muted">Shows market volume by saved resume version. Keep template names aligned with how you want prompts matched.</p>{bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}</section>
@@ -377,7 +388,7 @@ export function DashboardClient() {
             <label>Priority<select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
             <label>Status<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
             <label>Next action date<input type="date" value={draft.next_action_date ?? ""} onChange={(event) => setDraft({ ...draft, next_action_date: event.target.value || null })} /></label>
-            <label className="checkbox-row"><input type="checkbox" checked={draft.is_pinned} onChange={(event) => setDraft({ ...draft, is_pinned: event.target.checked })} /> Pin as top opportunity</label>
+            <label className="checkbox-row"><input type="checkbox" checked={draft.is_pinned} onChange={(event) => setDraft({ ...draft, is_pinned: event.target.checked })} /> Pin as priority item</label>
             <label>Job description<textarea value={draft.job_description} onChange={(event) => setDraft({ ...draft, job_description: event.target.value, role_bucket: pickBucketByKeywords(draft.role, event.target.value, bucketOptions) })} required /></label>
             <label>Network notes<textarea value={draft.network_notes ?? ""} onChange={(event) => setDraft({ ...draft, network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
             <label>General notes<textarea value={draft.general_notes ?? draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, general_notes: event.target.value, notes: event.target.value })} placeholder="Manual call notes, recruiter context, compensation notes, or initial observations." /></label>
@@ -387,7 +398,7 @@ export function DashboardClient() {
         </section>
 
         <section className="card stack opportunities-panel">
-          <div className="opportunities-search-box"><h2>Opportunities</h2><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Resume template<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value)}><option value="all">All templates</option>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority)}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} /> Pinned only</label><label className="checkbox-row"><input type="checkbox" checked={attentionOnly} onChange={(event) => setAttentionOnly(event.target.checked)} /> Needs attention only</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {opportunities.length} opportunities.</p></div>
+          <div className="opportunities-search-box"><h2>Other Opportunities</h2><p className="muted">Priority Queue items are hidden here by default to avoid duplication.</p><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Resume template<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value)}><option value="all">All templates</option>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority)}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={showPriorityItems} onChange={(event) => setShowPriorityItems(event.target.checked)} /> Show Priority Queue items too</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {showPriorityItems ? opportunities.length : otherOpportunityCount} {showPriorityItems ? "total" : "other"} opportunities.</p></div>
           <div className="opportunities-scroll" aria-label="Scrollable opportunities list">
             {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => {
               const reasons = getAttentionReasons(opportunity, today);
