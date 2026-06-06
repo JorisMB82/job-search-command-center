@@ -42,6 +42,16 @@ function sourceTypeLabel(sourceType: string) {
   return "Placeholder / not implemented";
 }
 
+function promptTypeLabel(type: string) {
+  if (type === "company_research") return "Research prompt";
+  if (type === "unposted_role") return "Unposted role prompt";
+  if (type === "proposal_outreach") return "Proposal outreach prompt";
+  if (type === "contact_strategy") return "Contact strategy prompt";
+  if (type === "strategic_angle") return "Strategic angle prompt";
+  if (type === "source_discovery") return "Source discovery prompt";
+  return "Prompt";
+}
+
 export function OpportunityRadarClient() {
   const [tab, setTab] = useState<Tab>("signals");
   const [signals, setSignals] = useState<RadarSignal[]>([]);
@@ -114,7 +124,7 @@ export function OpportunityRadarClient() {
   async function buildPrompt(type: string, signal?: RadarSignal, target?: TargetCompany, angle?: StrategicAngle) {
     const response = await fetch("/api/radar/prompts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, signal, target, angle }) });
     const payload = await response.json() as ApiPayload<{ prompt: string }>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Prompt generation failed."); else { setPrompt(payload.data.prompt); await navigator.clipboard?.writeText(payload.data.prompt).catch(() => undefined); }
+    if (payload.error || !payload.data) setMessage(payload.error || "Prompt generation failed."); else { setPrompt(payload.data.prompt); await navigator.clipboard?.writeText(payload.data.prompt).catch(() => undefined); setMessage(`${promptTypeLabel(type)} copied. Paste it into ChatGPT Plus manually, then paste useful output into the relevant notes.`); }
   }
 
   async function convertSignal(signal: RadarSignal) {
