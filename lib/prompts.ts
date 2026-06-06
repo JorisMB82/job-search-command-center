@@ -211,8 +211,8 @@ Please return a concise RESUME TAILORING BRIEF in this exact structure so I can 
 
 RESUME TAILORING BRIEF — ${opportunity.company} / ${opportunity.role}
 
-1. BEST RESUME VERSION
-- Confirm whether this is the right resume template for the role, and explain briefly.
+1. SELECTED RESUME FIT CHECK
+- Confirm whether the selected resume template fits this role well enough to tailor, and explain briefly. Do not imply that you compared against other resume versions.
 
 2. FIT SCORE
 - Score from 1-100 and one short explanation.
