@@ -8,6 +8,7 @@ alter table if exists public.outreach_drafts enable row level security;
 alter table if exists public.resume_templates enable row level security;
 alter table if exists public.radar_sources enable row level security;
 alter table if exists public.radar_signals enable row level security;
+alter table if exists public.radar_messages enable row level security;
 alter table if exists public.target_companies enable row level security;
 alter table if exists public.strategic_angles enable row level security;
 
@@ -18,6 +19,7 @@ revoke all on table public.outreach_drafts from anon, authenticated;
 revoke all on table public.resume_templates from anon, authenticated;
 revoke all on table public.radar_sources from anon, authenticated;
 revoke all on table public.radar_signals from anon, authenticated;
+revoke all on table public.radar_messages from anon, authenticated;
 revoke all on table public.target_companies from anon, authenticated;
 revoke all on table public.strategic_angles from anon, authenticated;
 
@@ -27,5 +29,6 @@ grant select, insert, update, delete on table public.outreach_drafts to service_
 grant select, insert, update, delete on table public.resume_templates to service_role;
 grant select, insert, update, delete on table public.radar_sources to service_role;
 grant select, insert, update, delete on table public.radar_signals to service_role;
+grant select, insert, update, delete on table public.radar_messages to service_role;
 grant select, insert, update, delete on table public.target_companies to service_role;
 grant select, insert, update, delete on table public.strategic_angles to service_role;
