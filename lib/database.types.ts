@@ -78,7 +78,9 @@ export type Opportunity = {
   source: string | null;
 };
 
-export type OpportunityInsert = Omit<Opportunity, "id" | "created_at" | "updated_at">;
+export type OpportunityInsert = Omit<Opportunity, "id" | "created_at" | "updated_at" | "interview_screen_map"> & {
+  interview_screen_map?: string | null;
+};
 export type OpportunityUpdate = Partial<OpportunityInsert>;
 
 export type OutreachDraft = {
