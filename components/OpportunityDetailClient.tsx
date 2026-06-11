@@ -13,6 +13,78 @@ import {
 import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
 
+const PREP_DRAFT_STORAGE_PREFIX = "job-search-command-center:prep-draft-v1";
+
+type PrepDraft = {
+  resumeTailoringNotes: string;
+  generalNotes: string;
+  interviewPrepNotes: string;
+  updatedAt: string;
+};
+
+type PrepDraftContent = Omit<PrepDraft, "updatedAt">;
+
+type PrepDirtyFields = {
+  resumeTailoringNotes: boolean;
+  generalNotes: boolean;
+  interviewPrepNotes: boolean;
+};
+
+const EMPTY_PREP_DIRTY_FIELDS: PrepDirtyFields = {
+  resumeTailoringNotes: false,
+  generalNotes: false,
+  interviewPrepNotes: false,
+};
+
+function getPrepDraftStorageKey(opportunityId: string) {
+  return `${PREP_DRAFT_STORAGE_PREFIX}:${opportunityId}`;
+}
+
+function readPrepLocalDraft(opportunityId: string): PrepDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(getPrepDraftStorageKey(opportunityId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PrepDraft>;
+    if (typeof parsed.updatedAt !== "string") return null;
+    return {
+      resumeTailoringNotes: parsed.resumeTailoringNotes ?? "",
+      generalNotes: parsed.generalNotes ?? "",
+      interviewPrepNotes: parsed.interviewPrepNotes ?? "",
+      updatedAt: parsed.updatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePrepLocalDraft(opportunityId: string, content: PrepDraftContent) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(getPrepDraftStorageKey(opportunityId), JSON.stringify({ ...content, updatedAt: new Date().toISOString() }));
+  } catch {
+    // Ignore localStorage failures so note editing still works.
+  }
+}
+
+function removePrepLocalDraft(opportunityId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(getPrepDraftStorageKey(opportunityId));
+  } catch {
+    // Ignore localStorage failures so note editing still works.
+  }
+}
+
+function hasDirtyPrepFields(fields: PrepDirtyFields) {
+  return fields.resumeTailoringNotes || fields.generalNotes || fields.interviewPrepNotes;
+}
+
+function syncPrepLocalDraft(opportunityId: string, dirtyFields: PrepDirtyFields, content: PrepDraftContent) {
+  if (hasDirtyPrepFields(dirtyFields)) writePrepLocalDraft(opportunityId, content);
+  else removePrepLocalDraft(opportunityId);
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "Unknown";
   const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
@@ -76,7 +148,10 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   const [resumeTailoringNotes, setResumeTailoringNotes] = useState("");
   const [generalNotes, setGeneralNotes] = useState("");
   const [interviewScreenMap, setInterviewScreenMap] = useState("");
+  const [prepDirtyFields, setPrepDirtyFields] = useState<PrepDirtyFields>(EMPTY_PREP_DIRTY_FIELDS);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const hasUnsavedPrepChanges = hasDirtyPrepFields(prepDirtyFields);
 
   useEffect(() => {
     async function load() {
@@ -90,11 +165,39 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       if (!opportunityResponse.ok || opportunityPayload.error) setMessage(opportunityPayload.error ?? "Could not load opportunity.");
       else {
         const loaded = opportunityPayload.data ?? null;
+        const savedPrep = {
+          resumeTailoringNotes: loaded?.resume_tailoring_notes ?? "",
+          generalNotes: loaded?.general_notes ?? loaded?.notes ?? "",
+          interviewPrepNotes: loaded?.interview_prep_notes ?? "",
+        };
+        const localDraft = loaded ? readPrepLocalDraft(id) : null;
+        const localDraftTime = localDraft ? new Date(localDraft.updatedAt).getTime() : Number.NaN;
+        const savedTime = loaded ? new Date(loaded.updated_at).getTime() : Number.NaN;
+        const localDraftDiffers = Boolean(
+          localDraft &&
+          (localDraft.resumeTailoringNotes !== savedPrep.resumeTailoringNotes ||
+            localDraft.generalNotes !== savedPrep.generalNotes ||
+            localDraft.interviewPrepNotes !== savedPrep.interviewPrepNotes),
+        );
+        const shouldRestoreLocalDraft = Boolean(localDraft && localDraftDiffers && !Number.isNaN(localDraftTime) && !Number.isNaN(savedTime) && localDraftTime > savedTime);
+        const prepToShow = shouldRestoreLocalDraft && localDraft ? localDraft : savedPrep;
+
         setOpportunity(loaded);
-        setInterviewPrepNotes(loaded?.interview_prep_notes ?? "");
-        setResumeTailoringNotes(loaded?.resume_tailoring_notes ?? "");
-        setGeneralNotes(loaded?.general_notes ?? loaded?.notes ?? "");
+        setInterviewPrepNotes(prepToShow.interviewPrepNotes);
+        setResumeTailoringNotes(prepToShow.resumeTailoringNotes);
+        setGeneralNotes(prepToShow.generalNotes);
         setInterviewScreenMap(loaded?.interview_screen_map ?? "");
+        setPrepDirtyFields(
+          shouldRestoreLocalDraft && localDraft
+            ? {
+                resumeTailoringNotes: localDraft.resumeTailoringNotes !== savedPrep.resumeTailoringNotes,
+                generalNotes: localDraft.generalNotes !== savedPrep.generalNotes,
+                interviewPrepNotes: localDraft.interviewPrepNotes !== savedPrep.interviewPrepNotes,
+              }
+            : { ...EMPTY_PREP_DIRTY_FIELDS },
+        );
+        if (shouldRestoreLocalDraft) setMessage("Restored an unsaved local prep-note draft from this browser. Click Save all prep notes to make it permanent.");
+        else if (localDraft && !localDraftDiffers) removePrepLocalDraft(id);
       }
 
       if (!templatesResponse.ok || templatesPayload.error) setMessage(templatesPayload.error ?? "Could not load resume templates.");
@@ -102,6 +205,16 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     }
     void load();
   }, [id]);
+
+  useEffect(() => {
+    if (!hasUnsavedPrepChanges) return;
+    function warnBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [hasUnsavedPrepChanges]);
 
   const bucketOptions = useMemo(() => uniqueTemplateNames(resumeTemplates, opportunity?.role_bucket), [resumeTemplates, opportunity?.role_bucket]);
 
@@ -129,6 +242,42 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   const screenMapPrompt = promptOpportunity ? buildInterviewScreenMapPrompt(promptOpportunity) : "";
   const screenMapReady = Boolean(resumeTailoringNotes.trim() && generalNotes.trim() && interviewPrepNotes.trim());
   const hasSavedScreenMap = Boolean(opportunity?.interview_screen_map?.trim());
+  const currentPrepDraft = { resumeTailoringNotes, generalNotes, interviewPrepNotes };
+
+  function updateResumeTailoringNotes(value: string) {
+    const nextDraft = { resumeTailoringNotes: value, generalNotes, interviewPrepNotes };
+    const nextDirtyFields = { ...prepDirtyFields, resumeTailoringNotes: true };
+    setResumeTailoringNotes(value);
+    setPrepDirtyFields(nextDirtyFields);
+    syncPrepLocalDraft(id, nextDirtyFields, nextDraft);
+  }
+
+  function updateGeneralNotes(value: string) {
+    const nextDraft = { resumeTailoringNotes, generalNotes: value, interviewPrepNotes };
+    const nextDirtyFields = { ...prepDirtyFields, generalNotes: true };
+    setGeneralNotes(value);
+    setPrepDirtyFields(nextDirtyFields);
+    syncPrepLocalDraft(id, nextDirtyFields, nextDraft);
+  }
+
+  function updateInterviewPrepNotes(value: string) {
+    const nextDraft = { resumeTailoringNotes, generalNotes, interviewPrepNotes: value };
+    const nextDirtyFields = { ...prepDirtyFields, interviewPrepNotes: true };
+    setInterviewPrepNotes(value);
+    setPrepDirtyFields(nextDirtyFields);
+    syncPrepLocalDraft(id, nextDirtyFields, nextDraft);
+  }
+
+  function markPrepFieldSaved(field: keyof PrepDirtyFields) {
+    const nextDirtyFields = { ...prepDirtyFields, [field]: false };
+    setPrepDirtyFields(nextDirtyFields);
+    syncPrepLocalDraft(id, nextDirtyFields, currentPrepDraft);
+  }
+
+  function markAllPrepFieldsSaved() {
+    setPrepDirtyFields({ ...EMPTY_PREP_DIRTY_FIELDS });
+    removePrepLocalDraft(id);
+  }
 
   function resetCopyFlags() {
     setShortPromptCopied(false);
@@ -173,7 +322,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     setScreenMapPromptCopied(true);
   }
 
-  async function updateOpportunity(update: OpportunityUpdate) {
+  async function updateOpportunity(update: OpportunityUpdate, successMessage = "Opportunity updated.") {
     const response = await fetch(`/api/opportunities/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -182,20 +331,46 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     const payload = (await response.json()) as { data?: Opportunity; error?: string };
     if (!response.ok || payload.error || !payload.data) {
       setMessage(payload.error ?? "Could not update opportunity.");
-      return;
+      return false;
     }
     setOpportunity(payload.data);
     if (update.interview_prep_notes !== undefined) setInterviewPrepNotes(payload.data.interview_prep_notes ?? "");
     if (update.resume_tailoring_notes !== undefined) setResumeTailoringNotes(payload.data.resume_tailoring_notes ?? "");
     if (update.general_notes !== undefined || update.notes !== undefined) setGeneralNotes(payload.data.general_notes ?? payload.data.notes ?? "");
     if (update.interview_screen_map !== undefined) setInterviewScreenMap(payload.data.interview_screen_map ?? "");
-    setMessage("Opportunity updated.");
+    setMessage(successMessage);
+    return true;
   }
 
-  async function saveInterviewPrepNotes() { await updateOpportunity({ interview_prep_notes: interviewPrepNotes }); }
-  async function saveResumeTailoringNotes() { await updateOpportunity({ resume_tailoring_notes: resumeTailoringNotes }); }
-  async function saveGeneralNotes() { await updateOpportunity({ general_notes: generalNotes, notes: generalNotes }); }
-  async function saveInterviewScreenMap() { await updateOpportunity({ interview_screen_map: interviewScreenMap }); }
+  async function saveInterviewPrepNotes() {
+    const saved = await updateOpportunity({ interview_prep_notes: interviewPrepNotes }, "Interview prep notes saved.");
+    if (saved) markPrepFieldSaved("interviewPrepNotes");
+  }
+
+  async function saveResumeTailoringNotes() {
+    const saved = await updateOpportunity({ resume_tailoring_notes: resumeTailoringNotes }, "Resume tailoring notes saved.");
+    if (saved) markPrepFieldSaved("resumeTailoringNotes");
+  }
+
+  async function saveGeneralNotes() {
+    const saved = await updateOpportunity({ general_notes: generalNotes, notes: generalNotes }, "General / call notes saved.");
+    if (saved) markPrepFieldSaved("generalNotes");
+  }
+
+  async function saveAllPrepNotes() {
+    const saved = await updateOpportunity(
+      {
+        resume_tailoring_notes: resumeTailoringNotes,
+        general_notes: generalNotes,
+        notes: generalNotes,
+        interview_prep_notes: interviewPrepNotes,
+      },
+      "All prep notes saved. They are now stored permanently for this opportunity.",
+    );
+    if (saved) markAllPrepFieldsSaved();
+  }
+
+  async function saveInterviewScreenMap() { await updateOpportunity({ interview_screen_map: interviewScreenMap }, "Interview screen map saved."); }
 
   async function deleteOpportunity() {
     const response = await fetch(`/api/opportunities/${id}`, { method: "DELETE" });
@@ -247,21 +422,34 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         {message ? <p className="muted">{message}</p> : null}
       </section>
 
+      <section className={`card stack prep-save-panel ${hasUnsavedPrepChanges ? "has-unsaved" : ""}`}>
+        <div className="prep-save-header">
+          <div className="stack">
+            <h2>Prep notes save control</h2>
+            <p className="muted">Important: text in the three prep boxes is only permanent after saving. A local emergency draft is kept in this browser while you type, but use Save all prep notes before closing the app or relying on the screen-map workflow.</p>
+          </div>
+          <div className="prep-save-actions">
+            {hasUnsavedPrepChanges ? <span className="badge warning">Unsaved prep notes</span> : <span className="badge accent">Prep notes saved</span>}
+            <button type="button" onClick={() => void saveAllPrepNotes()}>Save all prep notes</button>
+          </div>
+        </div>
+      </section>
+
       <section className="grid">
         <article className="card stack">
-          <div className="row"><h2>Resume Tailoring Notes</h2><button className="secondary" type="button" onClick={() => void saveResumeTailoringNotes()}>Save resume notes</button></div>
+          <div className="row"><h2>Resume Tailoring Notes</h2>{prepDirtyFields.resumeTailoringNotes ? <span className="badge warning">Unsaved</span> : null}<button type="button" onClick={() => void saveResumeTailoringNotes()}>Save this note</button></div>
           <p className="muted">Paste the RESUME TAILORING BRIEF from the resume prompt here.</p>
-          <textarea className="prep-notes" value={resumeTailoringNotes} onChange={(event) => setResumeTailoringNotes(event.target.value)} placeholder="Paste RESUME TAILORING BRIEF here." />
+          <textarea className={`prep-notes ${prepDirtyFields.resumeTailoringNotes ? "dirty" : ""}`} value={resumeTailoringNotes} onChange={(event) => updateResumeTailoringNotes(event.target.value)} placeholder="Paste RESUME TAILORING BRIEF here." />
         </article>
         <article className="card stack">
-          <div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div>
+          <div className="row"><h2>General / Call Notes</h2>{prepDirtyFields.generalNotes ? <span className="badge warning">Unsaved</span> : null}<button type="button" onClick={() => void saveGeneralNotes()}>Save this note</button></div>
           <p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the General / Call Notes prompt.</p>
-          <textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." />
+          <textarea className={`prep-notes ${prepDirtyFields.generalNotes ? "dirty" : ""}`} value={generalNotes} onChange={(event) => updateGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." />
         </article>
         <article className="card stack">
-          <div className="row"><h2>Interview Prep Notes</h2><button className="secondary" type="button" onClick={() => void saveInterviewPrepNotes()}>Save interview notes</button></div>
+          <div className="row"><h2>Interview Prep Notes</h2>{prepDirtyFields.interviewPrepNotes ? <span className="badge warning">Unsaved</span> : null}<button type="button" onClick={() => void saveInterviewPrepNotes()}>Save this note</button></div>
           <p className="muted">Paste the INTERVIEW PREP BRIEF from the Interview Prep Notes prompt here.</p>
-          <textarea className="prep-notes" value={interviewPrepNotes} onChange={(event) => setInterviewPrepNotes(event.target.value)} placeholder="Paste INTERVIEW PREP BRIEF here." />
+          <textarea className={`prep-notes ${prepDirtyFields.interviewPrepNotes ? "dirty" : ""}`} value={interviewPrepNotes} onChange={(event) => updateInterviewPrepNotes(event.target.value)} placeholder="Paste INTERVIEW PREP BRIEF here." />
         </article>
       </section>
 
@@ -273,6 +461,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         </div>
         <p className="muted">Use this after the three prep boxes above are filled. Copy the prompt, paste it into ChatGPT Plus, then paste the final one-page interview map below and save it. The second-screen view is browser-based, not a generated PDF.</p>
         {!screenMapReady ? <p className="error">Fill the Resume Tailoring Notes, General / Call Notes, and Interview Prep Notes boxes before generating the screen-map prompt.</p> : null}
+        {hasUnsavedPrepChanges ? <p className="error">You have unsaved prep-note edits. Save all prep notes before relying on this prompt or closing the app.</p> : null}
         {screenMapPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned one-page map into the box below.</p> : null}
         {screenMapReady ? <details className="stack"><summary>Preview the interview screen-map prompt being copied</summary><pre>{screenMapPrompt}</pre></details> : null}
         <label>Final interview screen map<textarea className="screen-map-editor" value={interviewScreenMap} onChange={(event) => setInterviewScreenMap(event.target.value)} placeholder="Paste the final one-page interview screen map from ChatGPT here." /></label>
