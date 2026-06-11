@@ -3,7 +3,13 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CopyIcon } from "./CopyIcon";
-import { buildOpportunityAnalysisPrompt, buildOutreachDraftPrompt, buildResumeTailoringPrompt, buildShortOpportunityAnalysisPrompt } from "../lib/prompts";
+import {
+  buildInterviewScreenMapPrompt,
+  buildOpportunityAnalysisPrompt,
+  buildOutreachDraftPrompt,
+  buildResumeTailoringPrompt,
+  buildShortOpportunityAnalysisPrompt,
+} from "../lib/prompts";
 import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityUpdate, OutreachDraftInsert, ResumeTemplate } from "../lib/database.types";
 import { OPPORTUNITY_PRIORITIES, OPPORTUNITY_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from "../lib/database.types";
 
@@ -64,10 +70,12 @@ export function OpportunityDetailClient({ id }: { id: string }) {
   const [fullPromptCopied, setFullPromptCopied] = useState(false);
   const [resumePromptCopied, setResumePromptCopied] = useState(false);
   const [outreachPromptCopied, setOutreachPromptCopied] = useState(false);
+  const [screenMapPromptCopied, setScreenMapPromptCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [interviewPrepNotes, setInterviewPrepNotes] = useState("");
   const [resumeTailoringNotes, setResumeTailoringNotes] = useState("");
   const [generalNotes, setGeneralNotes] = useState("");
+  const [interviewScreenMap, setInterviewScreenMap] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -86,6 +94,7 @@ export function OpportunityDetailClient({ id }: { id: string }) {
         setInterviewPrepNotes(loaded?.interview_prep_notes ?? "");
         setResumeTailoringNotes(loaded?.resume_tailoring_notes ?? "");
         setGeneralNotes(loaded?.general_notes ?? loaded?.notes ?? "");
+        setInterviewScreenMap(loaded?.interview_screen_map ?? "");
       }
 
       if (!templatesResponse.ok || templatesPayload.error) setMessage(templatesPayload.error ?? "Could not load resume templates.");
@@ -101,46 +110,67 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     return findMatchingResumeTemplate(resumeTemplates, opportunity.role_bucket);
   }, [opportunity, resumeTemplates]);
 
+  const promptOpportunity = opportunity
+    ? {
+        ...opportunity,
+        interview_prep_notes: interviewPrepNotes,
+        resume_tailoring_notes: resumeTailoringNotes,
+        general_notes: generalNotes,
+        notes: generalNotes || opportunity.notes,
+        interview_screen_map: interviewScreenMap,
+      }
+    : null;
+
   const templateMatchedByAlias = Boolean(opportunity && matchingResumeTemplate && matchingResumeTemplate.name.trim().toLowerCase() !== opportunity.role_bucket.trim().toLowerCase());
-  const shortPrompt = opportunity ? buildShortOpportunityAnalysisPrompt(opportunity) : "";
-  const fullPrompt = opportunity ? buildOpportunityAnalysisPrompt(opportunity) : "";
-  const resumePrompt = opportunity && matchingResumeTemplate ? buildResumeTailoringPrompt(opportunity, matchingResumeTemplate) : "";
-  const outreachPrompt = opportunity ? buildOutreachDraftPrompt(opportunity, matchingResumeTemplate) : "";
+  const shortPrompt = promptOpportunity ? buildShortOpportunityAnalysisPrompt(promptOpportunity) : "";
+  const fullPrompt = promptOpportunity ? buildOpportunityAnalysisPrompt(promptOpportunity) : "";
+  const resumePrompt = promptOpportunity && matchingResumeTemplate ? buildResumeTailoringPrompt(promptOpportunity, matchingResumeTemplate) : "";
+  const outreachPrompt = promptOpportunity ? buildOutreachDraftPrompt(promptOpportunity, matchingResumeTemplate) : "";
+  const screenMapPrompt = promptOpportunity ? buildInterviewScreenMapPrompt(promptOpportunity) : "";
+  const screenMapReady = Boolean(resumeTailoringNotes.trim() && generalNotes.trim() && interviewPrepNotes.trim());
+  const hasSavedScreenMap = Boolean(opportunity?.interview_screen_map?.trim());
+
+  function resetCopyFlags() {
+    setShortPromptCopied(false);
+    setFullPromptCopied(false);
+    setResumePromptCopied(false);
+    setOutreachPromptCopied(false);
+    setScreenMapPromptCopied(false);
+  }
 
   async function copyShortPrompt() {
     if (!shortPrompt || typeof navigator === "undefined") return;
     await navigator.clipboard.writeText(shortPrompt);
+    resetCopyFlags();
     setShortPromptCopied(true);
-    setFullPromptCopied(false);
-    setResumePromptCopied(false);
-    setOutreachPromptCopied(false);
   }
 
   async function copyFullPrompt() {
     if (!fullPrompt || typeof navigator === "undefined") return;
     await navigator.clipboard.writeText(fullPrompt);
+    resetCopyFlags();
     setFullPromptCopied(true);
-    setShortPromptCopied(false);
-    setResumePromptCopied(false);
-    setOutreachPromptCopied(false);
   }
 
   async function copyResumePrompt() {
     if (!resumePrompt || typeof navigator === "undefined") return;
     await navigator.clipboard.writeText(resumePrompt);
+    resetCopyFlags();
     setResumePromptCopied(true);
-    setShortPromptCopied(false);
-    setFullPromptCopied(false);
-    setOutreachPromptCopied(false);
   }
 
   async function copyOutreachPrompt() {
     if (!outreachPrompt || typeof navigator === "undefined") return;
     await navigator.clipboard.writeText(outreachPrompt);
+    resetCopyFlags();
     setOutreachPromptCopied(true);
-    setShortPromptCopied(false);
-    setFullPromptCopied(false);
-    setResumePromptCopied(false);
+  }
+
+  async function copyScreenMapPrompt() {
+    if (!screenMapReady || !screenMapPrompt || typeof navigator === "undefined") return;
+    await navigator.clipboard.writeText(screenMapPrompt);
+    resetCopyFlags();
+    setScreenMapPromptCopied(true);
   }
 
   async function updateOpportunity(update: OpportunityUpdate) {
@@ -158,12 +188,14 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     if (update.interview_prep_notes !== undefined) setInterviewPrepNotes(payload.data.interview_prep_notes ?? "");
     if (update.resume_tailoring_notes !== undefined) setResumeTailoringNotes(payload.data.resume_tailoring_notes ?? "");
     if (update.general_notes !== undefined || update.notes !== undefined) setGeneralNotes(payload.data.general_notes ?? payload.data.notes ?? "");
+    if (update.interview_screen_map !== undefined) setInterviewScreenMap(payload.data.interview_screen_map ?? "");
     setMessage("Opportunity updated.");
   }
 
   async function saveInterviewPrepNotes() { await updateOpportunity({ interview_prep_notes: interviewPrepNotes }); }
   async function saveResumeTailoringNotes() { await updateOpportunity({ resume_tailoring_notes: resumeTailoringNotes }); }
   async function saveGeneralNotes() { await updateOpportunity({ general_notes: generalNotes, notes: generalNotes }); }
+  async function saveInterviewScreenMap() { await updateOpportunity({ interview_screen_map: interviewScreenMap }); }
 
   async function deleteOpportunity() {
     const response = await fetch(`/api/opportunities/${id}`, { method: "DELETE" });
@@ -195,7 +227,11 @@ export function OpportunityDetailClient({ id }: { id: string }) {
     <>
       <section className="card stack">
         <p className="muted"><strong>Opportunity Detail</strong></p>
-        <div className="row"><h1>{opportunity.role}</h1><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}</div>
+        <div className="row">
+          <h1>{opportunity.role}</h1>
+          <span className="badge">{STATUS_LABELS[opportunity.status]}</span>
+          {opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}
+        </div>
         <p><strong>{opportunity.company}</strong>{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
         <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAge(opportunity.created_at)})</p>
         {opportunity.url ? <p><a href={opportunity.url} target="_blank" rel="noreferrer">Open source posting</a></p> : null}
@@ -212,15 +248,61 @@ export function OpportunityDetailClient({ id }: { id: string }) {
       </section>
 
       <section className="grid">
-        <article className="card stack"><div className="row"><h2>Resume Tailoring Notes</h2><button className="secondary" type="button" onClick={() => void saveResumeTailoringNotes()}>Save resume notes</button></div><p className="muted">Paste the RESUME TAILORING BRIEF from the resume prompt here.</p><textarea className="prep-notes" value={resumeTailoringNotes} onChange={(event) => setResumeTailoringNotes(event.target.value)} placeholder="Paste RESUME TAILORING BRIEF here." /></article>
-        <article className="card stack"><div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div><p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the General / Call Notes prompt.</p><textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." /></article>
-        <article className="card stack"><div className="row"><h2>Interview Prep Notes</h2><button className="secondary" type="button" onClick={() => void saveInterviewPrepNotes()}>Save interview notes</button></div><p className="muted">Paste the INTERVIEW PREP BRIEF from the Interview Prep Notes prompt here.</p><textarea className="prep-notes" value={interviewPrepNotes} onChange={(event) => setInterviewPrepNotes(event.target.value)} placeholder="Paste INTERVIEW PREP BRIEF here." /></article>
+        <article className="card stack">
+          <div className="row"><h2>Resume Tailoring Notes</h2><button className="secondary" type="button" onClick={() => void saveResumeTailoringNotes()}>Save resume notes</button></div>
+          <p className="muted">Paste the RESUME TAILORING BRIEF from the resume prompt here.</p>
+          <textarea className="prep-notes" value={resumeTailoringNotes} onChange={(event) => setResumeTailoringNotes(event.target.value)} placeholder="Paste RESUME TAILORING BRIEF here." />
+        </article>
+        <article className="card stack">
+          <div className="row"><h2>General / Call Notes</h2><button className="secondary" type="button" onClick={() => void saveGeneralNotes()}>Save general notes</button></div>
+          <p className="muted">Use this for call recap, recruiter notes, compensation, manual observations, or output from the General / Call Notes prompt.</p>
+          <textarea className="prep-notes" value={generalNotes} onChange={(event) => setGeneralNotes(event.target.value)} placeholder="Paste call notes, general analysis, or follow-up context here." />
+        </article>
+        <article className="card stack">
+          <div className="row"><h2>Interview Prep Notes</h2><button className="secondary" type="button" onClick={() => void saveInterviewPrepNotes()}>Save interview notes</button></div>
+          <p className="muted">Paste the INTERVIEW PREP BRIEF from the Interview Prep Notes prompt here.</p>
+          <textarea className="prep-notes" value={interviewPrepNotes} onChange={(event) => setInterviewPrepNotes(event.target.value)} placeholder="Paste INTERVIEW PREP BRIEF here." />
+        </article>
       </section>
 
-      <section className="card stack"><div className="row"><h2>Resume Tailoring Notes prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}><CopyIcon />Copy resume prompt</button></div>{matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>{templateMatchedByAlias ? <>. Current bucket is <strong>{opportunity.role_bucket}</strong>, so the app is using the closest saved template. Select another saved template above if this is not the right fit.</> : <>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</>}</p> : <p className="error">No saved resume template matches the current bucket: <strong>{opportunity.role_bucket}</strong>. Select a saved template from the dropdown above or add resume text under the Resume Templates section.</p>}{matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}{resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}{resumePrompt ? <pre>{resumePrompt}</pre> : null}</section>
-      <section className="card stack"><div className="row"><h2>General / Call Notes prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}><CopyIcon />Copy general notes prompt</button></div><p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>{fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}<pre>{fullPrompt}</pre></section>
-      <section className="card stack"><div className="row"><h2>Interview Prep Notes prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}><CopyIcon />Copy interview prep prompt</button></div><p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>{shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}<pre>{shortPrompt}</pre></section>
+      <section className="card stack">
+        <div className="row">
+          <h2>Step 4 — Interview Screen Map</h2>
+          <button className="secondary" type="button" onClick={copyScreenMapPrompt} disabled={!screenMapReady}><CopyIcon />Copy screen-map prompt</button>
+          {hasSavedScreenMap ? <a className="button secondary" href={`/opportunities/${id}/screen-map`} target="_blank" rel="noreferrer">Open second-screen view</a> : null}
+        </div>
+        <p className="muted">Use this after the three prep boxes above are filled. Copy the prompt, paste it into ChatGPT Plus, then paste the final one-page interview map below and save it. The second-screen view is browser-based, not a generated PDF.</p>
+        {!screenMapReady ? <p className="error">Fill the Resume Tailoring Notes, General / Call Notes, and Interview Prep Notes boxes before generating the screen-map prompt.</p> : null}
+        {screenMapPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned one-page map into the box below.</p> : null}
+        {screenMapReady ? <details className="stack"><summary>Preview the interview screen-map prompt being copied</summary><pre>{screenMapPrompt}</pre></details> : null}
+        <label>Final interview screen map<textarea className="screen-map-editor" value={interviewScreenMap} onChange={(event) => setInterviewScreenMap(event.target.value)} placeholder="Paste the final one-page interview screen map from ChatGPT here." /></label>
+        <div className="row"><button type="button" onClick={() => void saveInterviewScreenMap()}>Save screen map</button>{hasSavedScreenMap ? <span className="badge accent">Saved</span> : null}</div>
+      </section>
+
+      <section className="card stack">
+        <div className="row"><h2>Resume Tailoring Notes prompt</h2><button className="secondary" type="button" onClick={copyResumePrompt} disabled={!resumePrompt}><CopyIcon />Copy resume prompt</button></div>
+        {matchingResumeTemplate ? <p className="muted">Matched resume template: <strong>{matchingResumeTemplate.name}</strong>{templateMatchedByAlias ? <>. Current bucket is <strong>{opportunity.role_bucket}</strong>, so the app is using the closest saved template. Select another saved template above if this is not the right fit.</> : <>. Paste the prompt into ChatGPT, then paste the returned tailoring brief into Resume Tailoring Notes.</>}</p> : <p className="error">No saved resume template matches the current bucket: <strong>{opportunity.role_bucket}</strong>. Select a saved template from the dropdown above or add resume text under the Resume Templates section.</p>}
+        {matchingResumeTemplate && !matchingResumeTemplate.content.trim() ? <p className="error">This resume template has no resume content yet. Paste your resume text into the template before using this prompt.</p> : null}
+        {resumePromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Resume Tailoring Notes above.</p> : null}
+        {resumePrompt ? <pre>{resumePrompt}</pre> : null}
+      </section>
+
+      <section className="card stack">
+        <div className="row"><h2>General / Call Notes prompt</h2><button className="secondary" type="button" onClick={copyFullPrompt}><CopyIcon />Copy general notes prompt</button></div>
+        <p className="muted">Optional fallback. Use when you want broader analysis from the full saved job description; paste useful output into General / Call Notes.</p>
+        {fullPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste useful output into General / Call Notes.</p> : null}
+        <pre>{fullPrompt}</pre>
+      </section>
+
+      <section className="card stack">
+        <div className="row"><h2>Interview Prep Notes prompt</h2><button className="secondary" type="button" onClick={copyShortPrompt}><CopyIcon />Copy interview prep prompt</button></div>
+        <p className="muted">Recommended for interview prep. It asks ChatGPT to return a paste-back-ready interview prep brief.</p>
+        {shortPromptCopied ? <p className="muted">Copied. Paste this into ChatGPT Plus manually, then paste the returned brief into Interview Prep Notes above.</p> : null}
+        <pre>{shortPrompt}</pre>
+      </section>
+
       <section className="card stack"><h2>Job description</h2><p>{opportunity.job_description}</p></section>
+
       <section className="card stack">
         <div className="row"><h2>Step 3 — Prepare outreach draft</h2><button className="secondary" type="button" onClick={copyOutreachPrompt} disabled={!outreachPrompt}><CopyIcon />Copy ChatGPT outreach prompt</button></div>
         <p className="muted">Use this sequence: 1) copy the ChatGPT outreach prompt, 2) paste it into ChatGPT Plus, 3) paste the final subject and message from ChatGPT into the blank fields below, then save. Nothing is sent automatically.</p>
@@ -237,7 +319,12 @@ export function OpportunityDetailClient({ id }: { id: string }) {
           <button type="submit">Save draft</button>
         </form>
       </section>
-      <section className="card stack"><h2>Delete opportunity</h2><p className="muted">Use delete only for duplicates, test entries, or mistakes. For real opportunities, prefer changing status to Closed / Archived.</p>{!confirmDelete ? <button className="danger" type="button" onClick={() => setConfirmDelete(true)}>Delete opportunity</button> : <div className="row"><button className="danger" type="button" onClick={() => void deleteOpportunity()}>Confirm delete permanently</button><button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section>
+
+      <section className="card stack">
+        <h2>Delete opportunity</h2>
+        <p className="muted">Use delete only for duplicates, test entries, or mistakes. For real opportunities, prefer changing status to Closed / Archived.</p>
+        {!confirmDelete ? <button className="danger" type="button" onClick={() => setConfirmDelete(true)}>Delete opportunity</button> : <div className="row"><button className="danger" type="button" onClick={() => void deleteOpportunity()}>Confirm delete permanently</button><button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}
+      </section>
     </>
   );
 }
