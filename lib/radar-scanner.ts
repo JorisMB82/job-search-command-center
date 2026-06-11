@@ -21,6 +21,7 @@ export type ScannedSignal = {
 
 const TIMEOUT_MS = 10000;
 const MIN_RELEVANCE_SCORE = 3;
+const RWA_NEWS_URL = "https://app.rwa.xyz/news";
 const FUNDING = ["raised", "funding", "seed", "series a", "series b", "series c", "investment", "round", "capital"];
 const EXPANSION = ["expands", "expansion", "launches in", "enters", "market entry", "u.s.", "us market", "north america", "new market"];
 const PRODUCT = ["launches", "unveils", "introduces", "platform", "product", "solution"];
@@ -28,17 +29,36 @@ const PARTNER = ["partners", "partnership", "collaboration", "integrates", "inte
 const REGULATORY = ["sec", "finra", "nydfs", "broker-dealer", "ats", "custody", "custodian", "license", "regulated", "compliance"];
 const RWA = ["tokenization", "tokenized", "rwa", "real-world assets", "digital assets", "stablecoin", "blockchain", "private markets", "on-chain", "custody"];
 const HIRING = ["hiring", "scaling", "team", "growth", "chief of staff", "operations", "partnerships", "go-to-market", "gtm"];
+const RWA_INTERNAL_HOSTS = new Set(["app.rwa.xyz", "rwa.xyz", "www.rwa.xyz", "rwa.news", "docs.rwa.xyz"]);
 
 function hasAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(term));
 }
 
+function decodeHtml(value: string) {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
+function compactText(value: string) {
+  return decodeHtml(value).replace(/\s+/g, " ").trim();
+}
+
 function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  return compactText(value.replace(/<[^>]*>/g, " "));
 }
 
 function decodeXml(value: string) {
-  return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').trim();
+  return compactText(value);
 }
 
 function tag(item: string, name: string) {
@@ -122,6 +142,39 @@ function parseDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+function absoluteUrl(href: string, baseUrl: string) {
+  try {
+    return new URL(decodeHtml(href), baseUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function hostLabel(url: string | null) {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function isRwaNavigationHeadline(headline: string) {
+  const lower = headline.toLowerCase();
+  return [
+    "subscribe",
+    "sign up",
+    "log in",
+    "market overview",
+    "asset screener",
+    "data api",
+    "documentation",
+    "privacy policy",
+    "terms of use",
+    "register your assets",
+  ].some((term) => lower.includes(term));
+}
+
 export async function scanRssSource(source: RadarSource): Promise<ScannedSignal[]> {
   const xml = await fetchText(source.url);
   const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/gi)].map((m) => m[0]);
@@ -183,9 +236,58 @@ export async function scanHackerNewsSource(source: RadarSource): Promise<Scanned
   }).filter(isRelevant);
 }
 
+export async function scanRwaNewsSource(source: RadarSource): Promise<ScannedSignal[]> {
+  const sourceUrl = source.url || RWA_NEWS_URL;
+  const html = await fetchText(sourceUrl);
+  const lowerHtml = html.toLowerCase();
+  const newsStart = lowerHtml.indexOf("latest tokenization news");
+  const newsHtml = newsStart >= 0 ? html.slice(newsStart) : html;
+  const keywordText = source.keywords?.join(" ") || "RWA tokenization stablecoin custody";
+  const seen = new Set<string>();
+  const signals: ScannedSignal[] = [];
+
+  for (const match of newsHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const url = absoluteUrl(match[1], sourceUrl);
+    const host = hostLabel(url);
+    const headline = stripHtml(match[2]);
+    if (!url || !host || RWA_INTERNAL_HOSTS.has(host)) continue;
+    if (headline.length < 20 || isRwaNavigationHeadline(headline)) continue;
+    const dedupeKey = dedupe(url, headline, source.name);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const summary = `Headline collected from RWA.xyz Tokenization News. Original source: ${host}.`;
+    const text = `${headline} ${summary} ${keywordText}`.toLowerCase();
+    const signal: ScannedSignal = {
+      source_id: source.id,
+      company: extractCompany(headline),
+      headline,
+      url,
+      source_name: source.name,
+      published_at: null,
+      signal_type: classify(text),
+      category: source.category,
+      summary,
+      raw_excerpt: summary,
+      relevance_score: score(text, null, source.category),
+      status: "new",
+      suggested_angle: suggestedAngle(text),
+      notes: null,
+      chatgpt_output: null,
+      dedupe_key: dedupeKey,
+    };
+
+    if (isRelevant(signal)) signals.push(signal);
+    if (signals.length >= 25) break;
+  }
+
+  return signals;
+}
+
 export async function scanSource(source: RadarSource): Promise<ScannedSignal[]> {
   if (source.source_type === "rss") return scanRssSource(source);
   if (source.source_type === "hackernews") return scanHackerNewsSource(source);
+  if (source.source_type === "rwa_news" || source.url.includes("app.rwa.xyz/news")) return scanRwaNewsSource(source);
   if (source.source_type === "manual") return [];
   throw new Error(`${source.source_type} is a placeholder source type and is not implemented yet.`);
 }
