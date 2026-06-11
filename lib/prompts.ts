@@ -108,6 +108,7 @@ function notesForPrompt(opportunity: Opportunity): string {
     ["Interview prep notes", opportunity.interview_prep_notes],
     ["Resume tailoring notes", opportunity.resume_tailoring_notes],
     ["General / call notes", opportunity.general_notes ?? opportunity.notes],
+    ["Interview screen map", opportunity.interview_screen_map],
     ["Legacy notes", opportunity.notes],
   ].filter(([, value]) => typeof value === "string" && value.trim().length > 0);
 
@@ -237,6 +238,86 @@ RESUME TAILORING BRIEF — ${opportunity.company} / ${opportunity.role}
 
 9. CAUTION
 - Any claims I should avoid because they are not clearly supported by the resume text.`;
+}
+
+export function buildInterviewScreenMapPrompt(opportunity: Opportunity): string {
+  const essentialDescription = buildEssentialDescription(opportunity.job_description);
+  const detectedKeywords = detectKeywords(opportunity.job_description);
+
+  return `You are my interview preparation partner. Create a one-page INTERVIEW SCREEN MAP that I can keep open on a second monitor during a live video interview.
+
+Do not apply, browse, send messages, or take action on my behalf. Use only the context below. Keep all positioning truthful and conservative. Do not invent experience, metrics, client names, or technical ownership that is not supported by the notes.
+
+The output must be optimized for fast visual scanning during the call:
+- Landscape / horizontal one-page feel.
+- 3 or 4 compact columns maximum.
+- Very concise bullets, not paragraphs.
+- Short section headers.
+- Emphasize what I must say, what I must not overclaim, and what questions I should ask.
+- Avoid generic advice.
+- Make it specific to this company and role.
+
+Opportunity:
+Company: ${opportunity.company}
+Role: ${opportunity.role}
+Location: ${opportunity.location ?? "Not listed"}
+URL: ${opportunity.url ?? "Not provided"}
+Status: ${opportunity.status}
+Role bucket: ${opportunity.role_bucket}
+Priority: ${opportunity.priority}
+Network notes: ${opportunity.network_notes ?? "None yet"}
+
+Detected job keywords:
+${detectedKeywords}
+
+Essential job description excerpt:
+${essentialDescription}
+
+My saved prep notes and ChatGPT feedback:
+${notesForPrompt(opportunity)}
+
+Please return the final answer in this exact structure so I can paste it back into my app's Interview Screen Map box:
+
+INTERVIEW SCREEN MAP — ${opportunity.company} / ${opportunity.role}
+
+North star:
+- One sentence on what I need to prove in the interview.
+
+Core message:
+- One tight positioning sentence I can repeat.
+
+1. ROLE + CORE STORY
+WHAT THEY NEED
+- 3-5 bullets.
+MY ONE-LINER
+- 1 bullet.
+MUST SAY
+- 3 bullets.
+
+2. PROOF POINTS + KEYWORDS
+PROOF POINTS
+- 4-6 bullets using my real background.
+DROP THESE TERMS
+- 8-12 keywords or phrases I should naturally use.
+
+3. OBJECTIONS — ANSWER CLEANLY
+- 4-6 likely concerns with short response strategy.
+- Include do-not-overclaim reminders where useful.
+
+4. 90 DAYS + QUESTIONS
+30 / 60 / 90 STORY
+- 3 concise bullets.
+ASK FIRST
+- 5-7 high-value questions.
+
+DO NOT MISS
+- 3-5 reminders.
+
+DO NOT OVERCLAIM
+- 3-5 claims to avoid or phrase carefully.
+
+CLOSING LINE
+- One strong closing sentence I can say at the end of the interview.`;
 }
 
 export function buildOutreachDraftPrompt(opportunity: Opportunity, resumeTemplate: ResumeTemplate | null): string {
