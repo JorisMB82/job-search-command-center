@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Opportunity } from "../../../../lib/database.types";
 import { getServerSupabaseClient } from "../../../../lib/supabase";
+import styles from "./screen-map.module.css";
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "Not saved yet";
@@ -14,8 +15,8 @@ export default async function InterviewScreenMapPage({ params }: { params: { id:
 
   if (!supabase) {
     return (
-      <main className="screen-map-main">
-        <section className="screen-map-shell stack">
+      <main className={styles.main}>
+        <section className={`${styles.shell} stack`}>
           <p className="error">Supabase is not configured.</p>
           <Link className="button secondary" href={`/opportunities/${params.id}`}>Back to opportunity</Link>
         </section>
@@ -29,8 +30,8 @@ export default async function InterviewScreenMapPage({ params }: { params: { id:
 
   if (error || !opportunity) {
     return (
-      <main className="screen-map-main">
-        <section className="screen-map-shell stack">
+      <main className={styles.main}>
+        <section className={`${styles.shell} stack`}>
           <p className="error">Could not load this opportunity.</p>
           <Link className="button secondary" href="/">Back to dashboard</Link>
         </section>
@@ -39,9 +40,9 @@ export default async function InterviewScreenMapPage({ params }: { params: { id:
   }
 
   return (
-    <main className="screen-map-main">
-      <section className="screen-map-shell stack">
-        <header className="screen-map-header">
+    <main className={styles.main}>
+      <section className={`${styles.shell} stack`}>
+        <header className={styles.header}>
           <div>
             <p className="muted">Interview Screen Map</p>
             <h1>{opportunity.company} / {opportunity.role}</h1>
@@ -51,7 +52,7 @@ export default async function InterviewScreenMapPage({ params }: { params: { id:
         </header>
 
         {screenMap ? (
-          <pre className="screen-map-content">{screenMap}</pre>
+          <pre className={styles.content}>{screenMap}</pre>
         ) : (
           <div className="card stack">
             <h2>No screen map saved yet</h2>
