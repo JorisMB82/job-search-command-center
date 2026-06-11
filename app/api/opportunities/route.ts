@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     interview_prep_notes: normalizeText(body.interview_prep_notes),
     resume_tailoring_notes: normalizeText(body.resume_tailoring_notes),
     general_notes: normalizeText(body.general_notes),
+    interview_screen_map: normalizeText(body.interview_screen_map),
     role_bucket: normalizeText(body.role_bucket) ?? "Neutral Resume",
     priority: isPriority(body.priority) ? body.priority : "medium",
     is_pinned: Boolean(body.is_pinned),
