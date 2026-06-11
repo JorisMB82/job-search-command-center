@@ -23,15 +23,14 @@ create table if not exists public.opportunities (
   )),
   job_description text not null default '',
   notes text,
-  role_bucket text not null default 'General Strategy & Operations' check (role_bucket in (
-    'General Strategy & Operations',
-    'Chief of Staff',
-    'Digital Assets / RWA',
-    'Venture Builder / Startup Operator',
-    'Partnerships / Corporate Development'
-  )),
+  interview_prep_notes text,
+  resume_tailoring_notes text,
+  general_notes text,
+  interview_screen_map text,
+  role_bucket text not null default 'General Strategy & Operations',
   priority text not null default 'medium' check (priority in ('high', 'medium', 'low')),
   is_pinned boolean not null default false,
+  listing_posted_date date,
   next_action_date date,
   network_notes text,
   source text
