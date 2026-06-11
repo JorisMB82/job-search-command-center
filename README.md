@@ -17,10 +17,11 @@ V1 is intentionally lightweight:
 - Review and manually edit extracted fields before saving.
 - View saved opportunities on the dashboard.
 - Organize opportunities by role bucket, priority, source, status, and next action date.
-- Pin up to five priority opportunities for warm-intro and follow-up focus.
+- Pin priority opportunities for warm-intro and follow-up focus.
 - View role-bucket volume and status funnel summaries.
 - Open opportunity detail pages.
 - Generate and copy short or full ChatGPT analysis prompts.
+- Generate and save an interview screen map for a second-monitor interview view.
 - Save outreach drafts without sending them.
 - Manage resume templates.
 - Protect the private app with a simple one-user password gate.
@@ -55,8 +56,9 @@ Notes:
 3. For a new database, copy the contents of `supabase/migration.sql`.
 4. Run the SQL in the SQL editor.
 5. For an existing V1 database that already ran the first migration, run `supabase/002_dashboard_upgrade.sql` once.
-6. Copy the project URL into `NEXT_PUBLIC_SUPABASE_URL`.
-7. Copy the public anon key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+6. For the interview screen-map upgrade, run `supabase/003_interview_screen_map.sql` once.
+7. Copy the project URL into `NEXT_PUBLIC_SUPABASE_URL`.
+8. Copy the public anon key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
 The migration creates or upgrades:
 
@@ -64,6 +66,7 @@ The migration creates or upgrades:
 - `public.outreach_drafts`
 - `public.resume_templates`
 - dashboard fields on `opportunities`: `role_bucket`, `priority`, `is_pinned`, `next_action_date`, `network_notes`, and `source`
+- prep fields on `opportunities`: `interview_prep_notes`, `resume_tailoring_notes`, `general_notes`, and `interview_screen_map`
 - `updated_at` triggers and useful dashboard indexes
 
 This V1 app is protected by the app password gate before Supabase calls are made from the browser. It does not require any Supabase service role key.
