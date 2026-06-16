@@ -1,4 +1,4 @@
-export type RadarSourceType = "rss" | "hackernews" | "rwa_news" | "manual" | "github_search" | "sec_edgar";
+export type RadarSourceType = "rss" | "hackernews" | "rwa_news" | "tac_research" | "manual" | "github_search" | "sec_edgar";
 export type RadarSignalStatus = "new" | "saved" | "watching" | "dismissed" | "converted";
 export type RadarSignalType = "funding" | "expansion" | "product_launch" | "partnership" | "regulatory" | "hiring" | "market_entry" | "leadership" | "strategic_pivot" | "other";
 
