@@ -22,6 +22,7 @@ export type ScannedSignal = {
 const TIMEOUT_MS = 10000;
 const MIN_RELEVANCE_SCORE = 3;
 const RWA_NEWS_URL = "https://app.rwa.xyz/news";
+const TAC_RESEARCH_URL = "https://www.tacoalition.org/research";
 const FUNDING = ["raised", "funding", "seed", "series a", "series b", "series c", "investment", "round", "capital"];
 const EXPANSION = ["expands", "expansion", "launches in", "enters", "market entry", "u.s.", "us market", "north america", "new market"];
 const PRODUCT = ["launches", "unveils", "introduces", "platform", "product", "solution"];
@@ -175,6 +176,27 @@ function isRwaNavigationHeadline(headline: string) {
   ].some((term) => lower.includes(term));
 }
 
+function isTacNavigationHeadline(headline: string, href: string) {
+  const lower = headline.toLowerCase().replace(/\s+/g, " ").trim();
+  const hrefLower = href.toLowerCase();
+  if (!lower || headline.length < 12) return true;
+  if (hrefLower.startsWith("mailto:") || hrefLower.startsWith("#")) return true;
+  if (["research", "protocol", "membership", "about", "subscribe", "browse all", "listen", "read this week", "browse reports", "x / twitter", "linkedin"].includes(lower)) return true;
+  return [
+    "market indices",
+    "loading feed",
+    "privacy policy",
+    "terms of use",
+    "©",
+  ].some((term) => lower.includes(term));
+}
+
+function sourceOriginLabel(host: string | null) {
+  if (!host) return "unknown source";
+  if (host === "tacoalition.org") return "Tokenized Asset Coalition";
+  return host;
+}
+
 export async function scanRssSource(source: RadarSource): Promise<ScannedSignal[]> {
   const xml = await fetchText(source.url);
   const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/gi)].map((m) => m[0]);
@@ -284,10 +306,61 @@ export async function scanRwaNewsSource(source: RadarSource): Promise<ScannedSig
   return signals;
 }
 
+export async function scanTacResearchSource(source: RadarSource): Promise<ScannedSignal[]> {
+  const sourceUrl = source.url || TAC_RESEARCH_URL;
+  const html = await fetchText(sourceUrl);
+  const lowerHtml = html.toLowerCase();
+  const researchStart = lowerHtml.indexOf("featured");
+  const researchHtml = researchStart >= 0 ? html.slice(researchStart) : html;
+  const keywordText = source.keywords?.join(" ") || "RWA tokenization stablecoin policy digital assets";
+  const seen = new Set<string>();
+  const signals: ScannedSignal[] = [];
+
+  for (const match of researchHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const rawHref = match[1];
+    const headline = stripHtml(match[2]);
+    if (isTacNavigationHeadline(headline, rawHref)) continue;
+    const url = absoluteUrl(rawHref, sourceUrl);
+    const host = hostLabel(url);
+    if (!url || !host) continue;
+
+    const dedupeKey = dedupe(url, headline, source.name);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const summary = `Item collected from the Tokenized Asset Coalition Research Hub. Original source: ${sourceOriginLabel(host)}.`;
+    const text = `${headline} ${summary} ${keywordText}`.toLowerCase();
+    const signal: ScannedSignal = {
+      source_id: source.id,
+      company: extractCompany(headline),
+      headline,
+      url,
+      source_name: source.name,
+      published_at: null,
+      signal_type: classify(text),
+      category: source.category,
+      summary,
+      raw_excerpt: summary,
+      relevance_score: score(text, null, source.category),
+      status: "new",
+      suggested_angle: suggestedAngle(text),
+      notes: null,
+      chatgpt_output: null,
+      dedupe_key: dedupeKey,
+    };
+
+    if (isRelevant(signal)) signals.push(signal);
+    if (signals.length >= 25) break;
+  }
+
+  return signals;
+}
+
 export async function scanSource(source: RadarSource): Promise<ScannedSignal[]> {
   if (source.source_type === "rss") return scanRssSource(source);
   if (source.source_type === "hackernews") return scanHackerNewsSource(source);
   if (source.source_type === "rwa_news" || source.url.includes("app.rwa.xyz/news")) return scanRwaNewsSource(source);
+  if (source.source_type === "tac_research" || source.url.includes("tacoalition.org/research")) return scanTacResearchSource(source);
   if (source.source_type === "manual") return [];
   throw new Error(`${source.source_type} is a placeholder source type and is not implemented yet.`);
 }
