@@ -17,6 +17,7 @@ const starterSources: SourceDraft[] = [
   { name: "Ledger Insights RSS", url: "https://www.ledgerinsights.com/feed/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "RWA", "stablecoin", "custody", "capital markets", "tokenized deposits"] },
   { name: "CoinDesk RSS", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "institutional", "custody", "stablecoin", "RWA", "payments"] },
   { name: "RWA.xyz Tokenization News", url: "https://app.rwa.xyz/news", source_type: "rwa_news", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized", "stablecoin", "custody", "securities", "asset management", "private credit", "treasuries", "on-chain"], is_active: false },
+  { name: "Tokenized Asset Coalition Research Hub", url: "https://www.tacoalition.org/research", source_type: "tac_research", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized assets", "stablecoin", "policy", "regulation", "market infrastructure", "digital assets", "tokenized funds"], is_active: false },
   { name: "Trade Finance Global RSS", url: "https://www.tradefinanceglobal.com/posts/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodity finance", "supply chain finance", "receivables", "stock finance"] },
   { name: "Global Trade Review RSS", url: "https://www.gtreview.com/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodities", "banks", "export finance", "supply chain finance"] },
   { name: "Blockworks RSS", url: "https://blockworks.co/feed", source_type: "rss", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "DeFi", "institutional", "asset management"], is_active: false },
@@ -40,6 +41,7 @@ function sourceTypeLabel(sourceType: string) {
   if (sourceType === "rss") return "RSS implemented";
   if (sourceType === "hackernews") return "Hacker News optional";
   if (sourceType === "rwa_news") return "RWA.xyz News implemented";
+  if (sourceType === "tac_research") return "TAC Research Hub implemented";
   if (sourceType === "manual") return "Manual / no scan";
   return "Placeholder / not implemented";
 }
@@ -283,11 +285,11 @@ export function OpportunityRadarClient() {
         {sources.length > 0 ? <button onClick={() => void scan()}>Refresh all active sources</button> : null}
         <button className="secondary" onClick={() => void buildPrompt("source_discovery")}><CopyIcon />Copy source discovery prompt</button>
       </div>
-      <p className="muted">RSS, optional Hacker News, and RWA.xyz Tokenization News are implemented. GitHub Search and SEC EDGAR are placeholders. Refresh all scans active sources only; inactive sources can be tested one by one.</p>
+      <p className="muted">RSS, optional Hacker News, RWA.xyz Tokenization News, and TAC Research Hub are implemented. GitHub Search and SEC EDGAR are placeholders. Refresh all scans active sources only; inactive sources can be tested one by one.</p>
       <article className="mini-card stack">
         <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
         <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
-        <label>Type<select value={newSource.source_type} onChange={(e) => setNewSource({ ...newSource, source_type: e.target.value })}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
+        <label>Type<select value={newSource.source_type} onChange={(e) => setNewSource({ ...newSource, source_type: e.target.value })}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
         <label>Keywords<input value={typeof newSource.keywords === "string" ? newSource.keywords : newSource.keywords.join(", ")} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="comma separated" /></label>
         <button onClick={() => void createSource()}>Add source</button>
       </article>
