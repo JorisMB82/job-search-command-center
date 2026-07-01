@@ -113,7 +113,7 @@ export function OpportunityRadarClient() {
 
   function applySourcePreset(source: SourceDraft) {
     setNewSource({ ...source, keywords: sourceKeywordsValue(source) });
-    setMessage(`${source.name} filled into the add-source form. Click Add source to save it, then test it while inactive.`);
+    setMessage(`${source.name} filled into Advanced add source. Review it, click Add source, then test it while inactive.`);
   }
 
   function updateNewSourceType(source_type: string) {
@@ -303,21 +303,25 @@ export function OpportunityRadarClient() {
       <div className="row">
         <h2>Sources / Scanner</h2>
         <button className="secondary" onClick={() => void seedSources()}>{sources.length === 0 ? "Create starter sources" : "Add missing starter sources"}</button>
-        {sources.length > 0 ? <button onClick={() => void scan()}>Refresh all active sources</button> : null}
-        <button className="secondary" onClick={() => void buildPrompt("source_discovery")}><CopyIcon />Copy source discovery prompt</button>
+        {sources.length > 0 ? <button onClick={() => void scan()}>Refresh active sources</button> : null}
       </div>
-      <p className="muted">RSS, optional Hacker News, RWA.xyz Tokenization News, TAC Research Hub, and Digital Assets Edge are implemented. GitHub Search and SEC EDGAR are placeholders. Refresh all scans active sources only; inactive sources can be tested one by one.</p>
+      <p className="muted">Use presets first. Keep new sources inactive, test them once, then activate only the useful ones.</p>
       <article className="mini-card stack">
         <div className="row">
-          <strong>Quick presets</strong>
-          {featuredSourcePresets.map((source) => <button key={source.name} className="secondary" onClick={() => applySourcePreset(source)}>Use {source.name}</button>)}
+          <strong>Recommended sources</strong>
+          {featuredSourcePresets.map((source) => <button key={source.name} className="secondary" onClick={() => applySourcePreset(source)}>Add {source.name}</button>)}
         </div>
-        <p className="muted">The Type dropdown only tells the scanner how to read the URL. It does not create a source by itself. Use a preset or fill Name + URL + Keywords, then click Add source.</p>
-        <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
-        <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
-        <label>Type<select value={newSource.source_type} onChange={(e) => updateNewSourceType(e.target.value)}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
-        <label>Keywords<input value={typeof newSource.keywords === "string" ? newSource.keywords : newSource.keywords.join(", ")} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="comma separated" /></label>
-        <button onClick={() => void createSource()}>Add source</button>
+        <details>
+          <summary>Advanced: add custom source or copy source-discovery prompt</summary>
+          <div className="stack" style={{ marginTop: "12px" }}>
+            <p className="muted">The Type dropdown only tells the scanner how to read the URL. It does not create a source by itself. Fill Name + URL + Keywords, then click Add source.</p>
+            <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
+            <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
+            <label>Type<select value={newSource.source_type} onChange={(e) => updateNewSourceType(e.target.value)}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
+            <label>Keywords<input value={typeof newSource.keywords === "string" ? newSource.keywords : newSource.keywords.join(", ")} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="comma separated" /></label>
+            <div className="row"><button onClick={() => void createSource()}>Add source</button><button className="secondary" onClick={() => void buildPrompt("source_discovery")}><CopyIcon />Copy source discovery prompt</button></div>
+          </div>
+        </details>
       </article>
       {sources.length === 0 ? <p className="muted">No sources yet. Create starter sources or add one RSS feed manually.</p> : sources.map((source) => <article className="mini-card stack" key={source.id}>
         <div className="row"><strong>{source.name}</strong><span className="badge">{sourceTypeLabel(source.source_type)}</span><span className={source.is_active ? "badge accent" : "badge warning"}>{source.is_active ? "Active" : "Inactive"}</span></div>
@@ -328,7 +332,10 @@ export function OpportunityRadarClient() {
         <div className="row">
           <button className="secondary" onClick={() => void scan(source.id)}>Test this source only</button>
           <button className="secondary" onClick={() => void patchSource(source.id, { is_active: !source.is_active })}>{source.is_active ? "Deactivate" : "Activate"}</button>
-          <button className="secondary-danger" onClick={() => void deleteSource(source.id)}>Delete source</button>
+          <details>
+            <summary>More</summary>
+            <div className="row" style={{ marginTop: "10px" }}><button className="secondary-danger" onClick={() => void deleteSource(source.id)}>Delete source</button></div>
+          </details>
         </div>
       </article>)}
     </section> : null}
