@@ -21,6 +21,8 @@ export type ScannedSignal = {
 
 const TIMEOUT_MS = 10000;
 const MIN_RELEVANCE_SCORE = 3;
+const MAX_SIGNAL_AGE_DAYS = 30;
+const DAY_MS = 1000 * 60 * 60 * 24;
 const RWA_NEWS_URL = "https://app.rwa.xyz/news";
 const TAC_RESEARCH_URL = "https://www.tacoalition.org/research";
 const FUNDING = ["raised", "funding", "seed", "series a", "series b", "series c", "investment", "round", "capital"];
@@ -82,6 +84,19 @@ function classify(text: string): RadarSignalType {
   return "other";
 }
 
+function signalAgeDays(publishedAt: string | null) {
+  if (!publishedAt) return null;
+  const parsed = new Date(publishedAt).getTime();
+  if (Number.isNaN(parsed)) return null;
+  return (Date.now() - parsed) / DAY_MS;
+}
+
+function isRecentEnough(publishedAt: string | null) {
+  const age = signalAgeDays(publishedAt);
+  if (age === null) return true;
+  return age <= MAX_SIGNAL_AGE_DAYS;
+}
+
 function score(text: string, publishedAt: string | null, category: string | null) {
   let total = 0;
   if (hasAny(text, FUNDING)) total += 3;
@@ -93,11 +108,8 @@ function score(text: string, publishedAt: string | null, category: string | null
   if (hasAny(text, PRODUCT)) total += 2;
   if (text.includes("strategy") || text.includes("operations") || text.includes("gtm") || text.includes("partnerships")) total += 2;
   if (category) total += 1;
-  if (publishedAt) {
-    const age = (Date.now() - new Date(publishedAt).getTime()) / (1000 * 60 * 60 * 24);
-    if (age <= 30) total += 2;
-    if (age > 90) total -= 2;
-  }
+  const age = signalAgeDays(publishedAt);
+  if (age !== null && age <= MAX_SIGNAL_AGE_DAYS) total += 2;
   return total;
 }
 
@@ -122,7 +134,7 @@ function dedupe(url: string | null, headline: string, source: string | null) {
 }
 
 function isRelevant(signal: ScannedSignal) {
-  return signal.relevance_score >= MIN_RELEVANCE_SCORE && signal.headline.trim().length > 0;
+  return signal.relevance_score >= MIN_RELEVANCE_SCORE && signal.headline.trim().length > 0 && isRecentEnough(signal.published_at);
 }
 
 async function fetchText(url: string) {
@@ -231,11 +243,13 @@ export async function scanRssSource(source: RadarSource): Promise<ScannedSignal[
 
 export async function scanHackerNewsSource(source: RadarSource): Promise<ScannedSignal[]> {
   const query = encodeURIComponent(source.keywords?.join(" ") || source.url || "fintech startup funding");
-  const raw = await fetchText(`https://hn.algolia.com/api/v1/search_by_date?query=${query}&tags=story`);
+  const cutoffUnixSeconds = Math.floor((Date.now() - MAX_SIGNAL_AGE_DAYS * DAY_MS) / 1000);
+  const raw = await fetchText(`https://hn.algolia.com/api/v1/search_by_date?query=${query}&tags=story&numericFilters=created_at_i>=${cutoffUnixSeconds}`);
   const json = JSON.parse(raw) as { hits?: Array<{ title?: string; url?: string; created_at?: string; story_text?: string }> };
   return (json.hits ?? []).slice(0, 20).map((hit) => {
     const headline = hit.title || "Hacker News signal";
     const summary = stripHtml(hit.story_text || "").slice(0, 500);
+    const published = parseDate(hit.created_at || "");
     const text = `${headline} ${summary}`.toLowerCase();
     return {
       source_id: source.id,
@@ -243,12 +257,12 @@ export async function scanHackerNewsSource(source: RadarSource): Promise<Scanned
       headline,
       url: hit.url || null,
       source_name: source.name,
-      published_at: parseDate(hit.created_at || ""),
+      published_at: published,
       signal_type: classify(text),
       category: source.category,
       summary,
       raw_excerpt: summary,
-      relevance_score: score(text, hit.created_at || null, source.category),
+      relevance_score: score(text, published, source.category),
       status: "new" as const,
       suggested_angle: suggestedAngle(text),
       notes: null,
