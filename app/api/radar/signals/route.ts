@@ -2,13 +2,23 @@ import { NextResponse } from "next/server";
 import { normalizeText, radarError, readJson } from "../../../../lib/radar-api";
 import { getServerSupabaseClient } from "../../../../lib/supabase";
 
+const MAX_SIGNAL_AGE_DAYS = 30;
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+function isFreshOrUndated(signal: { published_at?: string | null }) {
+  if (!signal.published_at) return true;
+  const published = new Date(signal.published_at).getTime();
+  if (Number.isNaN(published)) return false;
+  return Date.now() - published <= MAX_SIGNAL_AGE_DAYS * DAY_MS;
+}
+
 export async function GET() {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   try {
     const { data, error } = await (supabase as any).from("radar_signals").select("*").order("relevance_score", { ascending: false }).order("published_at", { ascending: false, nullsFirst: false }).limit(250);
     if (error) throw error;
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: (data ?? []).filter(isFreshOrUndated) });
   } catch (error) {
     return radarError(error);
   }
