@@ -18,6 +18,7 @@ const starterSources: SourceDraft[] = [
   { name: "CoinDesk RSS", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "institutional", "custody", "stablecoin", "RWA", "payments"] },
   { name: "RWA.xyz Tokenization News", url: "https://app.rwa.xyz/news", source_type: "rwa_news", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized", "stablecoin", "custody", "securities", "asset management", "private credit", "treasuries", "on-chain"], is_active: false },
   { name: "Tokenized Asset Coalition Research Hub", url: "https://www.tacoalition.org/research", source_type: "tac_research", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized assets", "stablecoin", "policy", "regulation", "market infrastructure", "digital assets", "tokenized funds"], is_active: false },
+  { name: "The Digital Assets Edge RSS", url: "https://www.digitalassetsedge.com/rssfeed.php", source_type: "rss", category: "Digital Assets / RWA", keywords: ["digital assets", "tokenisation", "tokenization", "custody", "stablecoin", "collateral", "treasury", "market infrastructure", "securities finance", "regulation"], is_active: false },
   { name: "Trade Finance Global RSS", url: "https://www.tradefinanceglobal.com/posts/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodity finance", "supply chain finance", "receivables", "stock finance"] },
   { name: "Global Trade Review RSS", url: "https://www.gtreview.com/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodities", "banks", "export finance", "supply chain finance"] },
   { name: "Blockworks RSS", url: "https://blockworks.co/feed", source_type: "rss", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "DeFi", "institutional", "asset management"], is_active: false },
@@ -29,12 +30,18 @@ const starterSources: SourceDraft[] = [
   { name: "HN — Trade Finance / Collateral", url: "trade finance warehouse receipt collateral supply chain finance", source_type: "hackernews", category: "Trade Finance", keywords: ["trade finance", "warehouse receipt", "collateral", "supply chain finance"], is_active: false },
 ];
 
+const featuredSourcePresets = starterSources.filter((source) => ["RWA.xyz Tokenization News", "Tokenized Asset Coalition Research Hub", "The Digital Assets Edge RSS"].includes(source.name));
+
 function emptyAngle(): Partial<StrategicAngle> {
   return { name: "", category: "", best_fit_company: "", trigger_signals: [], pain_hypothesis: "", credibility_points: "", short_pitch: "", longer_thesis: "", cta: "", relevant_resume_template: "", is_active: true, sort_order: 0 };
 }
 
 function sourcePayload(source: SourceDraft) {
   return { ...source, keywords: typeof source.keywords === "string" ? source.keywords.split(",").map((item: string) => item.trim()).filter(Boolean) : source.keywords };
+}
+
+function sourceKeywordsValue(source: SourceDraft) {
+  return typeof source.keywords === "string" ? source.keywords : source.keywords.join(", ");
 }
 
 function sourceTypeLabel(sourceType: string) {
@@ -104,6 +111,20 @@ export function OpportunityRadarClient() {
     return text.includes(search.toLowerCase());
   });
 
+  function applySourcePreset(source: SourceDraft) {
+    setNewSource({ ...source, keywords: sourceKeywordsValue(source) });
+    setMessage(`${source.name} filled into the add-source form. Click Add source to save it, then test it while inactive.`);
+  }
+
+  function updateNewSourceType(source_type: string) {
+    const preset = featuredSourcePresets.find((source) => source.source_type === source_type);
+    if (preset && !newSource.name && !newSource.url) {
+      applySourcePreset(preset);
+      return;
+    }
+    setNewSource({ ...newSource, source_type });
+  }
+
   async function patchSignal(id: string, update: Partial<RadarSignal>) {
     const response = await fetch("/api/radar/signals", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...update }) });
     const payload = await response.json() as ApiPayload<RadarSignal>;
@@ -167,7 +188,7 @@ export function OpportunityRadarClient() {
     else {
       setSources((current) => current.some((item) => item.id === payload.data?.id) ? current : [payload.data as RadarSource, ...current]);
       setNewSource({ name: "", url: "", source_type: "rss", category: "", keywords: "" });
-      setMessage(payload.existing ? "Source already existed; reused existing source." : "Source added.");
+      setMessage(payload.existing ? "Source already existed; reused existing source." : "Source added. Keep it inactive first, then use Test this source only.");
     }
   }
 
@@ -285,11 +306,16 @@ export function OpportunityRadarClient() {
         {sources.length > 0 ? <button onClick={() => void scan()}>Refresh all active sources</button> : null}
         <button className="secondary" onClick={() => void buildPrompt("source_discovery")}><CopyIcon />Copy source discovery prompt</button>
       </div>
-      <p className="muted">RSS, optional Hacker News, RWA.xyz Tokenization News, and TAC Research Hub are implemented. GitHub Search and SEC EDGAR are placeholders. Refresh all scans active sources only; inactive sources can be tested one by one.</p>
+      <p className="muted">RSS, optional Hacker News, RWA.xyz Tokenization News, TAC Research Hub, and Digital Assets Edge are implemented. GitHub Search and SEC EDGAR are placeholders. Refresh all scans active sources only; inactive sources can be tested one by one.</p>
       <article className="mini-card stack">
+        <div className="row">
+          <strong>Quick presets</strong>
+          {featuredSourcePresets.map((source) => <button key={source.name} className="secondary" onClick={() => applySourcePreset(source)}>Use {source.name}</button>)}
+        </div>
+        <p className="muted">The Type dropdown only tells the scanner how to read the URL. It does not create a source by itself. Use a preset or fill Name + URL + Keywords, then click Add source.</p>
         <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
         <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
-        <label>Type<select value={newSource.source_type} onChange={(e) => setNewSource({ ...newSource, source_type: e.target.value })}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
+        <label>Type<select value={newSource.source_type} onChange={(e) => updateNewSourceType(e.target.value)}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
         <label>Keywords<input value={typeof newSource.keywords === "string" ? newSource.keywords : newSource.keywords.join(", ")} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="comma separated" /></label>
         <button onClick={() => void createSource()}>Add source</button>
       </article>
