@@ -2,6 +2,20 @@ import { NextResponse } from "next/server";
 import { normalizeDate, normalizeText, radarError, readJson } from "../../../../lib/radar-api";
 import { getServerSupabaseClient } from "../../../../lib/supabase";
 
+const RECOMMENDED_ACTIONS = new Set(["apply", "message", "monitor", "ignore"]);
+
+function clampScore(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric)) return null;
+  return Math.min(100, Math.max(0, numeric));
+}
+
+function normalizeRecommendedAction(value: unknown) {
+  const normalized = normalizeText(value);
+  return normalized && RECOMMENDED_ACTIONS.has(normalized) ? normalized : null;
+}
+
 function shape(body: any) {
   return {
     company: normalizeText(body.company),
@@ -12,6 +26,11 @@ function shape(body: any) {
     best_signal_id: body.best_signal_id ?? null,
     best_angle_id: body.best_angle_id ?? null,
     selected_resume_template: normalizeText(body.selected_resume_template),
+    recommended_action: normalizeRecommendedAction(body.recommended_action),
+    message_type: normalizeText(body.message_type),
+    fit_score: clampScore(body.fit_score),
+    fit_thesis: normalizeText(body.fit_thesis),
+    risk_notes: normalizeText(body.risk_notes),
     why_interesting: normalizeText(body.why_interesting),
     pain_hypothesis: normalizeText(body.pain_hypothesis),
     unposted_role_thesis: normalizeText(body.unposted_role_thesis),
@@ -31,7 +50,7 @@ export async function GET() {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   try {
-    const { data, error } = await (supabase as any).from("target_companies").select("*").order("updated_at", { ascending: false });
+    const { data, error } = await (supabase as any).from("target_companies").select("*").order("fit_score", { ascending: false, nullsFirst: false }).order("updated_at", { ascending: false });
     if (error) throw error;
     return NextResponse.json({ data });
   } catch (error) {
@@ -63,6 +82,9 @@ export async function PATCH(request: Request) {
     if (!body.id) return NextResponse.json({ error: "Target id is required." }, { status: 400 });
     const update = shape(body);
     if (body.company === undefined) delete (update as any).company;
+    for (const [key] of Object.entries(update)) {
+      if (body[key] === undefined) delete (update as any)[key];
+    }
     const { data, error } = await (supabase as any).from("target_companies").update(update).eq("id", body.id).select("*").single();
     if (error) throw error;
     return NextResponse.json({ data });
