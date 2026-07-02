@@ -159,10 +159,14 @@ html[data-theme="dark"] .pinned-card.drag-over { box-shadow: 0 0 0 3px rgba(255,
 .drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-control); background: color-mix(in srgb, var(--soft) 80%, var(--panel)); color: var(--primary); font-weight: 800; cursor: grab; user-select: none; flex: 0 0 auto; }
 .drag-handle:active { cursor: grabbing; }
 html[data-theme="dark"] .drag-handle { border: 1px solid var(--primary); background: #171200; box-shadow: 0 0 8px rgba(255, 230, 0, 0.18); }
-.priority-card { padding: 11px; overflow: hidden; font-size: 0.92rem; line-height: 1.34; }
+.card-title-row { align-items: flex-start; }
+.card-title-link { color: var(--text); font-weight: 780; flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; text-decoration: none; line-height: 1.18; }
+.card-title-link:hover { color: var(--primary); text-decoration: underline; }
+.card-click-area { display: grid; gap: 4px; color: var(--text); text-decoration: none; border-radius: var(--radius-control); }
+.card-click-area:hover { color: var(--text); text-decoration: none; background: color-mix(in srgb, var(--soft) 32%, transparent); }
+.priority-card { padding: 11px; overflow: visible; font-size: 0.92rem; line-height: 1.34; }
 .priority-card p { font-size: 0.92rem; line-height: 1.34; overflow-wrap: anywhere; }
 .priority-card .row { gap: 6px; align-items: flex-start; }
-.priority-card .row > strong { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
 .priority-card .badge { font-size: 0.7rem; padding: 2px 6px; }
 .priority-card .attention-note { font-size: 0.82rem; }
 .priority-card .card-control-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: end; }
