@@ -342,6 +342,16 @@ export function DashboardClient() {
     return true;
   });
 
+  function renderOpportunityControls(opportunity: Opportunity) {
+    return <div className="card-control-grid">
+      <label>Status<select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+      <label>Priority<select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+      <label>Next action<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void patchOpportunity(opportunity.id, { next_action_date: event.target.value || null })} /></label>
+      <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
+      <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
+    </div>;
+  }
+
   return (
     <div className="stack">
       <section className="metric-grid">
@@ -356,8 +366,8 @@ export function DashboardClient() {
         <div className="dashboard-side stack">
           <section className="card stack">
             <h2>Priority Queue</h2>
-            <p className="muted">Only high-priority or pinned opportunities. Drag cards to reorder this working list.</p>
-            {priorityQueueItems.length === 0 ? <p className="muted">No high-priority or pinned items right now.</p> : <div className="priority-list">{priorityQueueItems.map(({ opportunity, reasons }) => <article className={`mini-card pinned-card priority-card${dragOverPriorityId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} draggable onDragStart={(event) => handlePriorityDragStart(event, opportunity.id)} onDragOver={(event) => { event.preventDefault(); setDragOverPriorityId(opportunity.id); }} onDragLeave={() => setDragOverPriorityId(null)} onDrop={(event) => handlePriorityDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPriorityId(null); setDragOverPriorityId(null); }} aria-label={`Priority opportunity: ${opportunity.role}. Drag to reorder.`}><div className="row"><span className="drag-handle" aria-hidden="true">↕</span><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.priority === "high" ? <span className="badge warning">High</span> : null}{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}</div>}
+            <p className="muted">Only high-priority or pinned opportunities. Scroll this list and drag by the ↕ handle to reorder.</p>
+            {priorityQueueItems.length === 0 ? <p className="muted">No high-priority or pinned items right now.</p> : <div className="priority-list" style={{ maxHeight: "720px", overflowY: "auto", paddingRight: "6px", scrollPadding: "12px" }}>{priorityQueueItems.map(({ opportunity, reasons }) => <article className={`mini-card pinned-card priority-card${dragOverPriorityId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} onDragOver={(event) => { event.preventDefault(); setDragOverPriorityId(opportunity.id); }} onDragLeave={() => setDragOverPriorityId(null)} onDrop={(event) => handlePriorityDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPriorityId(null); setDragOverPriorityId(null); }} aria-label={`Priority opportunity: ${opportunity.role}. Drag by the handle to reorder.`}><div className="row"><span className="drag-handle" draggable onDragStart={(event) => handlePriorityDragStart(event, opportunity.id)} aria-label="Drag to reorder" title="Drag to reorder">↕</span><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.priority === "high" ? <span className="badge warning">High</span> : null}{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}{renderOpportunityControls(opportunity)}</article>)}</div>}
           </section>
 
           <section className="card stack"><h2>Resume template map</h2><p className="muted">Shows market volume by saved resume version. Keep template names aligned with how you want prompts matched.</p>{bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}</section>
@@ -378,13 +388,7 @@ export function DashboardClient() {
                     <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p>
                     <p className="muted">{opportunity.role_bucket} · {PRIORITY_LABELS[opportunity.priority]} priority{opportunity.source ? ` · ${opportunity.source}` : ""}</p>
                     {reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}
-                    <div className="card-control-grid">
-                      <label>Status<select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
-                      <label>Priority<select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
-                      <label>Next action<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void patchOpportunity(opportunity.id, { next_action_date: event.target.value || null })} /></label>
-                      <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
-                      <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
-                    </div>
+                    {renderOpportunityControls(opportunity)}
                   </article>
                 );
               })}
