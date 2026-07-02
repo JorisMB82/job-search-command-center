@@ -1,17 +1,19 @@
-# Job Search Command Center V1
+# Job Search Command Center V4
 
-A private internal Next.js app for managing job opportunities, resume templates, outreach drafts, and copy/paste ChatGPT analysis prompts.
+A private internal Next.js app for managing job opportunities, resume templates, outreach drafts, Opportunity Radar signals, and copy/paste ChatGPT analysis prompts.
 
-V1 is intentionally lightweight:
+The app remains intentionally manual-first:
 
 - No OpenAI API integration.
-- No AI API key required.
+- No paid AI API key required.
 - No LinkedIn automation or scraping.
 - No auto-sent emails.
 - No auto-applies.
 - AI help is limited to prompts you manually copy into ChatGPT Plus.
 
 ## Features
+
+### Main pipeline
 
 - Create opportunities from a public job-posting URL or pasted job description.
 - Review and manually edit extracted fields before saving.
@@ -25,6 +27,18 @@ V1 is intentionally lightweight:
 - Save outreach drafts without sending them.
 - Manage resume templates.
 - Protect the private app with a simple one-user password gate.
+
+### Opportunity Radar V4
+
+- Review Board for top signals, recent signals, and follow-ups due.
+- Signal Inbox with fit scoring and action filters.
+- Scorecard using: role fit 25, sector fit 20, seniority fit 15, Joris edge 20, network/access 10, timing 10.
+- Recommended action: apply, message, monitor, or ignore.
+- Recommended resume template per signal or target.
+- Application-prep and review prompts for manual ChatGPT use.
+- Saved Targets with fit score, thesis, risks, message type, and next action.
+- Source priority and scan frequency fields.
+- Optional Vercel cron refresh for due active sources.
 
 ## Environment variables
 
@@ -40,6 +54,7 @@ Set these variables:
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-public-anon-key
 APP_ACCESS_PASSWORD=choose-a-strong-private-password
+CRON_SECRET=optional-secret-for-vercel-cron
 ```
 
 Notes:
@@ -48,6 +63,7 @@ Notes:
 - Do not add a Supabase service role key to this app.
 - Do not hardcode secrets in source files.
 - `APP_ACCESS_PASSWORD` is required for private app access in local and deployed environments.
+- `CRON_SECRET` is only needed if you want the scheduled Radar scan endpoint enabled.
 
 ## Supabase setup
 
@@ -57,19 +73,27 @@ Notes:
 4. Run the SQL in the SQL editor.
 5. For an existing V1 database that already ran the first migration, run `supabase/002_dashboard_upgrade.sql` once.
 6. For the interview screen-map upgrade, run `supabase/003_interview_screen_map.sql` once.
-7. Copy the project URL into `NEXT_PUBLIC_SUPABASE_URL`.
-8. Copy the public anon key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+7. For Opportunity Radar tables, run `supabase/005_opportunity_radar.sql` once.
+8. For Radar V4 fields, run `supabase/006_radar_v4_efficiency.sql` once.
+9. Copy the project URL into `NEXT_PUBLIC_SUPABASE_URL`.
+10. Copy the public anon key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
-The migration creates or upgrades:
+The migrations create or upgrade:
 
 - `public.opportunities`
 - `public.outreach_drafts`
 - `public.resume_templates`
+- `public.radar_sources`
+- `public.radar_signals`
+- `public.strategic_angles`
+- `public.target_companies`
+- `public.radar_messages`
 - dashboard fields on `opportunities`: `role_bucket`, `priority`, `is_pinned`, `next_action_date`, `network_notes`, and `source`
 - prep fields on `opportunities`: `interview_prep_notes`, `resume_tailoring_notes`, `general_notes`, and `interview_screen_map`
-- `updated_at` triggers and useful dashboard indexes
+- Radar V4 fields: source priority/frequency, signal fit score/action/resume template, and target fit thesis/risk/action fields
+- `updated_at` triggers and useful dashboard/Radar indexes
 
-This V1 app is protected by the app password gate before Supabase calls are made from the browser. It does not require any Supabase service role key.
+This app is protected by the app password gate before Supabase calls are made from the browser. It does not require any Supabase service role key.
 
 ## Local development
 
@@ -99,6 +123,7 @@ If the Codex or CI environment still receives an HTTP 403 from the npm registry/
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `APP_ACCESS_PASSWORD`
+   - `CRON_SECRET` if using scheduled Radar scans
 3. Use a strong unique value for `APP_ACCESS_PASSWORD`.
 4. Deploy.
 5. Visit the Vercel deployment URL and log in with the app password.
@@ -111,14 +136,14 @@ The URL extraction route is best-effort and intentionally conservative:
 
 - It accepts only `http` and `https` URLs.
 - It rejects malformed, localhost, and private-network URLs.
-- It rejects LinkedIn URLs because V1 does not scrape LinkedIn.
+- It rejects LinkedIn URLs because the app does not scrape LinkedIn.
 - It times out slow requests.
 - It returns clean errors when a page is blocked, unavailable, non-HTML, or cannot be fetched.
 - Manual paste of the job description is always supported as the fallback.
 
-## What V1 does not automate
+## What this app does not automate
 
-V1 does not:
+The app does not:
 
 - Call the OpenAI API.
 - Require an OpenAI or AI provider API key.
