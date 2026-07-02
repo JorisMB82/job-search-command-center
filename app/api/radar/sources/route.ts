@@ -27,7 +27,6 @@ export async function GET() {
       .from("radar_sources")
       .select("*")
       .order("is_active", { ascending: false })
-      .order("priority", { ascending: true })
       .order("name", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ data });
