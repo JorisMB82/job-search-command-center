@@ -3,31 +3,55 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CopyIcon } from "./CopyIcon";
-import type { RadarSignal, RadarSource, StrategicAngle, TargetCompany } from "../lib/radar-types";
+import type { RadarRecommendedAction, RadarSignal, RadarSource, StrategicAngle, TargetCompany } from "../lib/radar-types";
 
-type Tab = "signals" | "targets" | "angles" | "sources";
-type SourceDraft = { name: string; url: string; source_type: string; category: string; keywords: string | string[]; is_active?: boolean };
+type Tab = "review" | "signals" | "targets" | "angles" | "sources";
+type SourceDraft = { name: string; url: string; source_type: string; category: string; keywords: string | string[]; is_active?: boolean; priority?: string; scan_frequency?: string; notes?: string };
 type ApiPayload<T> = { data?: T; error?: string; existing?: boolean };
 
+type ScoreField = {
+  key: keyof Pick<RadarSignal, "role_fit_score" | "sector_fit_score" | "seniority_fit_score" | "joris_edge_score" | "network_fit_score" | "timing_score">;
+  label: string;
+  max: number;
+};
+
+const scoreFields: ScoreField[] = [
+  { key: "role_fit_score", label: "Role", max: 25 },
+  { key: "sector_fit_score", label: "Sector", max: 20 },
+  { key: "seniority_fit_score", label: "Level", max: 15 },
+  { key: "joris_edge_score", label: "Joris edge", max: 20 },
+  { key: "network_fit_score", label: "Network", max: 10 },
+  { key: "timing_score", label: "Timing", max: 10 },
+];
+
+const sourcePriorityOptions = ["high", "medium", "low"];
+const sourceFrequencyOptions = [
+  { value: "daily", label: "Daily" },
+  { value: "weekdays", label: "Weekdays" },
+  { value: "twice_weekly", label: "2x / week" },
+  { value: "weekly", label: "Weekly" },
+  { value: "manual", label: "Manual only" },
+];
+
 const starterSources: SourceDraft[] = [
-  { name: "TechCrunch Startups RSS", url: "https://techcrunch.com/category/startups/feed/", source_type: "rss", category: "General Startup News", keywords: ["funding", "launch", "startup", "fintech", "market", "growth"] },
-  { name: "TechCrunch Fintech RSS", url: "https://techcrunch.com/category/fintech/feed/", source_type: "rss", category: "Fintech", keywords: ["fintech", "payments", "banking", "infrastructure", "launch", "funding"] },
-  { name: "TechCrunch Venture RSS", url: "https://techcrunch.com/category/venture/feed/", source_type: "rss", category: "Venture / Funding", keywords: ["funding", "venture", "series", "capital", "raise", "growth"] },
-  { name: "Crunchbase News RSS", url: "https://news.crunchbase.com/feed/", source_type: "rss", category: "Venture / Funding", keywords: ["funding", "venture", "startup", "fintech", "raise", "acquisition"] },
-  { name: "Ledger Insights RSS", url: "https://www.ledgerinsights.com/feed/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "RWA", "stablecoin", "custody", "capital markets", "tokenized deposits"] },
-  { name: "CoinDesk RSS", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "institutional", "custody", "stablecoin", "RWA", "payments"] },
-  { name: "RWA.xyz Tokenization News", url: "https://app.rwa.xyz/news", source_type: "rwa_news", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized", "stablecoin", "custody", "securities", "asset management", "private credit", "treasuries", "on-chain"], is_active: false },
-  { name: "Tokenized Asset Coalition Research Hub", url: "https://www.tacoalition.org/research", source_type: "tac_research", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized assets", "stablecoin", "policy", "regulation", "market infrastructure", "digital assets", "tokenized funds"], is_active: false },
-  { name: "The Digital Assets Edge RSS", url: "https://www.digitalassetsedge.com/rssfeed.php", source_type: "rss", category: "Digital Assets / RWA", keywords: ["digital assets", "tokenisation", "tokenization", "custody", "stablecoin", "collateral", "treasury", "market infrastructure", "securities finance", "regulation"], is_active: false },
-  { name: "Trade Finance Global RSS", url: "https://www.tradefinanceglobal.com/posts/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodity finance", "supply chain finance", "receivables", "stock finance"] },
-  { name: "Global Trade Review RSS", url: "https://www.gtreview.com/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodities", "banks", "export finance", "supply chain finance"] },
-  { name: "Blockworks RSS", url: "https://blockworks.co/feed", source_type: "rss", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "DeFi", "institutional", "asset management"], is_active: false },
-  { name: "Crowdfund Insider RSS", url: "https://www.crowdfundinsider.com/feed/", source_type: "rss", category: "Private Markets / Fintech", keywords: ["fintech", "crowdfunding", "private markets", "securities", "Reg CF", "digital assets"], is_active: false },
-  { name: "PYMNTS RSS", url: "https://www.pymnts.com/feed/", source_type: "rss", category: "Payments / Embedded Finance", keywords: ["payments", "B2B", "embedded finance", "working capital", "cross-border"], is_active: false },
-  { name: "Finextra Headlines RSS", url: "https://www.finextra.com/rss/headlines.aspx", source_type: "rss", category: "Fintech / Banking", keywords: ["fintech", "banking", "payments", "digital assets", "custody", "infrastructure"], is_active: false },
-  { name: "Hacker News Optional Search", url: "fintech startup funding", source_type: "hackernews", category: "Venture / Startup", keywords: ["fintech", "startup", "funding"], is_active: false },
-  { name: "HN — RWA / Tokenization", url: "RWA tokenization stablecoin custody institutional blockchain", source_type: "hackernews", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "custody", "institutional"], is_active: false },
-  { name: "HN — Trade Finance / Collateral", url: "trade finance warehouse receipt collateral supply chain finance", source_type: "hackernews", category: "Trade Finance", keywords: ["trade finance", "warehouse receipt", "collateral", "supply chain finance"], is_active: false },
+  { name: "TechCrunch Startups RSS", url: "https://techcrunch.com/category/startups/feed/", source_type: "rss", category: "General Startup News", keywords: ["funding", "launch", "startup", "fintech", "market", "growth"], priority: "medium", scan_frequency: "weekly" },
+  { name: "TechCrunch Fintech RSS", url: "https://techcrunch.com/category/fintech/feed/", source_type: "rss", category: "Fintech", keywords: ["fintech", "payments", "banking", "infrastructure", "launch", "funding"], priority: "medium", scan_frequency: "weekly" },
+  { name: "TechCrunch Venture RSS", url: "https://techcrunch.com/category/venture/feed/", source_type: "rss", category: "Venture / Funding", keywords: ["funding", "venture", "series", "capital", "raise", "growth"], priority: "medium", scan_frequency: "weekly" },
+  { name: "Crunchbase News RSS", url: "https://news.crunchbase.com/feed/", source_type: "rss", category: "Venture / Funding", keywords: ["funding", "venture", "startup", "fintech", "raise", "acquisition"], priority: "medium", scan_frequency: "weekly" },
+  { name: "Ledger Insights RSS", url: "https://www.ledgerinsights.com/feed/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "RWA", "stablecoin", "custody", "capital markets", "tokenized deposits"], priority: "high", scan_frequency: "weekdays" },
+  { name: "CoinDesk RSS", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "institutional", "custody", "stablecoin", "RWA", "payments"], priority: "medium", scan_frequency: "twice_weekly" },
+  { name: "RWA.xyz Tokenization News", url: "https://app.rwa.xyz/news", source_type: "rwa_news", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized", "stablecoin", "custody", "securities", "asset management", "private credit", "treasuries", "on-chain"], is_active: false, priority: "high", scan_frequency: "weekdays" },
+  { name: "Tokenized Asset Coalition Research Hub", url: "https://www.tacoalition.org/research", source_type: "tac_research", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized assets", "stablecoin", "policy", "regulation", "market infrastructure", "digital assets", "tokenized funds"], is_active: false, priority: "high", scan_frequency: "weekly" },
+  { name: "The Digital Assets Edge RSS", url: "https://www.digitalassetsedge.com/rssfeed.php", source_type: "rss", category: "Digital Assets / RWA", keywords: ["digital assets", "tokenisation", "tokenization", "custody", "stablecoin", "collateral", "treasury", "market infrastructure", "securities finance", "regulation"], is_active: false, priority: "high", scan_frequency: "weekdays" },
+  { name: "Trade Finance Global RSS", url: "https://www.tradefinanceglobal.com/posts/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodity finance", "supply chain finance", "receivables", "stock finance"], priority: "medium", scan_frequency: "weekly" },
+  { name: "Global Trade Review RSS", url: "https://www.gtreview.com/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodities", "banks", "export finance", "supply chain finance"], priority: "medium", scan_frequency: "weekly" },
+  { name: "Blockworks RSS", url: "https://blockworks.co/feed", source_type: "rss", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "DeFi", "institutional", "asset management"], is_active: false, priority: "medium", scan_frequency: "twice_weekly" },
+  { name: "Crowdfund Insider RSS", url: "https://www.crowdfundinsider.com/feed/", source_type: "rss", category: "Private Markets / Fintech", keywords: ["fintech", "crowdfunding", "private markets", "securities", "Reg CF", "digital assets"], is_active: false, priority: "medium", scan_frequency: "weekly" },
+  { name: "PYMNTS RSS", url: "https://www.pymnts.com/feed/", source_type: "rss", category: "Payments / Embedded Finance", keywords: ["payments", "B2B", "embedded finance", "working capital", "cross-border"], is_active: false, priority: "low", scan_frequency: "weekly" },
+  { name: "Finextra Headlines RSS", url: "https://www.finextra.com/rss/headlines.aspx", source_type: "rss", category: "Fintech / Banking", keywords: ["fintech", "banking", "payments", "digital assets", "custody", "infrastructure"], is_active: false, priority: "medium", scan_frequency: "weekly" },
+  { name: "Hacker News Optional Search", url: "fintech startup funding", source_type: "hackernews", category: "Venture / Startup", keywords: ["fintech", "startup", "funding"], is_active: false, priority: "low", scan_frequency: "weekly" },
+  { name: "HN — RWA / Tokenization", url: "RWA tokenization stablecoin custody institutional blockchain", source_type: "hackernews", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "custody", "institutional"], is_active: false, priority: "medium", scan_frequency: "weekly" },
+  { name: "HN — Trade Finance / Collateral", url: "trade finance warehouse receipt collateral supply chain finance", source_type: "hackernews", category: "Trade Finance", keywords: ["trade finance", "warehouse receipt", "collateral", "supply chain finance"], is_active: false, priority: "low", scan_frequency: "weekly" },
 ];
 
 const featuredSourcePresets = starterSources.filter((source) => ["RWA.xyz Tokenization News", "Tokenized Asset Coalition Research Hub", "The Digital Assets Edge RSS"].includes(source.name));
@@ -37,7 +61,12 @@ function emptyAngle(): Partial<StrategicAngle> {
 }
 
 function sourcePayload(source: SourceDraft) {
-  return { ...source, keywords: typeof source.keywords === "string" ? source.keywords.split(",").map((item: string) => item.trim()).filter(Boolean) : source.keywords };
+  return {
+    ...source,
+    priority: source.priority || "medium",
+    scan_frequency: source.scan_frequency || "weekly",
+    keywords: typeof source.keywords === "string" ? source.keywords.split(",").map((item: string) => item.trim()).filter(Boolean) : source.keywords,
+  };
 }
 
 function sourceKeywordsValue(source: SourceDraft) {
@@ -55,6 +84,8 @@ function sourceTypeLabel(sourceType: string) {
 
 function promptTypeLabel(type: string) {
   if (type === "company_research") return "Research prompt";
+  if (type === "application_prep") return "Application prep prompt";
+  if (type === "weekly_review") return "Weekly review prompt";
   if (type === "unposted_role") return "Unposted role prompt";
   if (type === "proposal_outreach") return "Proposal outreach prompt";
   if (type === "contact_strategy") return "Contact strategy prompt";
@@ -63,17 +94,73 @@ function promptTypeLabel(type: string) {
   return "Prompt";
 }
 
+function fitScoreValue(signal: RadarSignal) {
+  return signal.fit_score ?? Math.min(100, Math.max(0, Math.round((signal.relevance_score || 0) * 10)));
+}
+
+function actionForScore(score: number): RadarRecommendedAction {
+  if (score >= 80) return "apply";
+  if (score >= 65) return "message";
+  if (score >= 50) return "monitor";
+  return "ignore";
+}
+
+function actionLabel(action: string | null | undefined) {
+  if (action === "apply") return "Apply";
+  if (action === "message") return "Message";
+  if (action === "monitor") return "Monitor";
+  if (action === "ignore") return "Ignore";
+  return "Review";
+}
+
+function recommendedAction(signal: RadarSignal) {
+  return signal.recommended_action ?? actionForScore(fitScoreValue(signal));
+}
+
+function recommendedResumeTemplate(signal: RadarSignal) {
+  if (signal.recommended_resume_template) return signal.recommended_resume_template;
+  const text = `${signal.headline} ${signal.category ?? ""} ${signal.summary ?? ""} ${signal.suggested_angle ?? ""}`.toLowerCase();
+  if (text.includes("chief of staff") || text.includes("founder")) return "Chief of Staff";
+  if (text.includes("token") || text.includes("rwa") || text.includes("digital asset") || text.includes("stablecoin") || text.includes("custody") || text.includes("blockchain")) return "Digital Assets / RWA";
+  if (text.includes("partnership") || text.includes("corp dev") || text.includes("corporate development") || text.includes("business development")) return "Partnerships / Corporate Development";
+  if (text.includes("venture") || text.includes("startup") || text.includes("operator")) return "Venture Builder / Startup Operator";
+  return "General Strategy & Operations";
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Unknown";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Unknown";
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function dateAgeDays(value: string | null | undefined) {
+  if (!value) return Infinity;
+  const parsed = new Date(value).getTime();
+  if (Number.isNaN(parsed)) return Infinity;
+  return Math.floor((Date.now() - parsed) / (1000 * 60 * 60 * 24));
+}
+
+function isRecent(value: string | null | undefined, days: number) {
+  return dateAgeDays(value) <= days;
+}
+
+function sourceFrequencyLabel(value: string | null | undefined) {
+  return sourceFrequencyOptions.find((option) => option.value === value)?.label ?? "Weekly";
+}
+
 export function OpportunityRadarClient() {
-  const [tab, setTab] = useState<Tab>("signals");
+  const [tab, setTab] = useState<Tab>("review");
   const [signals, setSignals] = useState<RadarSignal[]>([]);
   const [sources, setSources] = useState<RadarSource[]>([]);
   const [targets, setTargets] = useState<TargetCompany[]>([]);
   const [angles, setAngles] = useState<StrategicAngle[]>([]);
   const [message, setMessage] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [newSource, setNewSource] = useState<SourceDraft>({ name: "", url: "", source_type: "rss", category: "", keywords: "" });
+  const [newSource, setNewSource] = useState<SourceDraft>({ name: "", url: "", source_type: "rss", category: "", keywords: "", priority: "medium", scan_frequency: "weekly" });
   const [newAngle, setNewAngle] = useState<Partial<StrategicAngle>>(emptyAngle());
   const [filter, setFilter] = useState("new");
+  const [actionFilter, setActionFilter] = useState<RadarRecommendedAction | "all">("all");
   const [search, setSearch] = useState("");
 
   async function loadAll() {
@@ -96,23 +183,30 @@ export function OpportunityRadarClient() {
 
   useEffect(() => { void loadAll(); }, []);
 
+  const sortedSignals = useMemo(() => [...signals].sort((a, b) => fitScoreValue(b) - fitScoreValue(a)), [signals]);
+  const activeSignals = sortedSignals.filter((signal) => signal.status !== "dismissed" && signal.status !== "converted");
+  const prioritySignals = activeSignals.filter((signal) => fitScoreValue(signal) >= 65).slice(0, 8);
+  const weeklySignals = activeSignals.filter((signal) => isRecent(signal.created_at, 7) || isRecent(signal.published_at, 7)).slice(0, 10);
+  const dueTargets = targets.filter((target) => target.next_action_date && target.next_action_date <= new Date().toISOString().slice(0, 10) && !["archived", "converted"].includes(target.target_status));
+
   const metrics = useMemo(() => ({
     newSignals: signals.filter((s) => s.status === "new").length,
     savedTargets: targets.length,
-    highSignals: signals.filter((s) => s.relevance_score >= 7 && s.status !== "dismissed").length,
+    highSignals: signals.filter((s) => fitScoreValue(s) >= 80 && s.status !== "dismissed").length,
     outreachActive: targets.filter((t) => !["not_contacted", "archived", "converted"].includes(t.outreach_status)).length,
     converted: signals.filter((s) => s.status === "converted").length + targets.filter((t) => t.target_status === "converted").length,
     activeSources: sources.filter((source) => source.is_active).length,
   }), [signals, targets, sources]);
 
-  const shownSignals = signals.filter((signal) => {
+  const shownSignals = sortedSignals.filter((signal) => {
     if (filter !== "all" && signal.status !== filter) return false;
+    if (actionFilter !== "all" && recommendedAction(signal) !== actionFilter) return false;
     const text = `${signal.company ?? ""} ${signal.headline} ${signal.summary ?? ""} ${signal.suggested_angle ?? ""}`.toLowerCase();
     return text.includes(search.toLowerCase());
   });
 
   function applySourcePreset(source: SourceDraft) {
-    setNewSource({ ...source, keywords: sourceKeywordsValue(source) });
+    setNewSource({ ...source, keywords: sourceKeywordsValue(source), priority: source.priority || "medium", scan_frequency: source.scan_frequency || "weekly" });
     setMessage(`${source.name} filled into Advanced add source. Review it, click Add source, then test it while inactive.`);
   }
 
@@ -132,6 +226,11 @@ export function OpportunityRadarClient() {
     else setSignals((current) => current.map((item) => item.id === id ? payload.data as RadarSignal : item));
   }
 
+  async function patchSignalScore(signal: RadarSignal, field: ScoreField, rawValue: string) {
+    const parsed = rawValue === "" ? null : Math.min(field.max, Math.max(0, Math.round(Number(rawValue) || 0)));
+    await patchSignal(signal.id, { [field.key]: parsed } as Partial<RadarSignal>);
+  }
+
   async function patchSource(id: string, update: Partial<RadarSource>) {
     const response = await fetch("/api/radar/sources", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...update }) });
     const payload = await response.json() as ApiPayload<RadarSource>;
@@ -149,7 +248,23 @@ export function OpportunityRadarClient() {
   }
 
   async function createTarget(signal: RadarSignal, status = "watching") {
-    const response = await fetch("/api/radar/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: signal.company || signal.headline, sector: signal.category, target_status: status, best_signal_id: signal.id, why_interesting: signal.headline, pain_hypothesis: signal.summary, proposal_angle: signal.suggested_angle, notes: signal.url }) });
+    const fitScore = fitScoreValue(signal);
+    const action = recommendedAction(signal);
+    const response = await fetch("/api/radar/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      company: signal.company || signal.headline,
+      sector: signal.category,
+      target_status: status,
+      best_signal_id: signal.id,
+      selected_resume_template: recommendedResumeTemplate(signal),
+      recommended_action: action,
+      message_type: action === "apply" ? "application" : action === "message" ? "outreach" : "monitoring",
+      fit_score: fitScore,
+      fit_thesis: `${signal.headline}${signal.suggested_angle ? ` — ${signal.suggested_angle}` : ""}`,
+      why_interesting: signal.headline,
+      pain_hypothesis: signal.summary,
+      proposal_angle: signal.suggested_angle,
+      notes: signal.url,
+    }) });
     const payload = await response.json() as ApiPayload<TargetCompany>;
     if (payload.error || !payload.data) setMessage(payload.error || "Target creation failed.");
     else { setTargets((current) => [payload.data as TargetCompany, ...current]); await patchSignal(signal.id, { status: status === "watching" ? "watching" : "saved" }); }
@@ -169,12 +284,12 @@ export function OpportunityRadarClient() {
     else { setMessage("Converted to opportunity."); await loadAll(); }
   }
 
-  async function scan(sourceId?: string) {
+  async function scan(sourceId?: string, dueOnly = false) {
     setMessage("Scanning sources...");
-    const response = await fetch("/api/radar/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: sourceId }) });
-    const payload = await response.json() as ApiPayload<{ created: number; scanned_sources: number; errors: string[] }>;
+    const response = await fetch("/api/radar/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: sourceId, due_only: dueOnly }) });
+    const payload = await response.json() as ApiPayload<{ created: number; duplicates: number; scanned_sources: number; errors: string[] }>;
     if (payload.error || !payload.data) setMessage(payload.error || "Scan failed.");
-    else setMessage(`Scan complete. New signals: ${payload.data.created}. Sources scanned: ${payload.data.scanned_sources}.`);
+    else setMessage(`Scan complete. New signals: ${payload.data.created}. Duplicates skipped: ${payload.data.duplicates}. Sources scanned: ${payload.data.scanned_sources}.`);
     await loadAll();
   }
 
@@ -187,7 +302,7 @@ export function OpportunityRadarClient() {
     if (payload.error || !payload.data) setMessage(payload.error || "Source creation failed.");
     else {
       setSources((current) => current.some((item) => item.id === payload.data?.id) ? current : [payload.data as RadarSource, ...current]);
-      setNewSource({ name: "", url: "", source_type: "rss", category: "", keywords: "" });
+      setNewSource({ name: "", url: "", source_type: "rss", category: "", keywords: "", priority: "medium", scan_frequency: "weekly" });
       setMessage(payload.existing ? "Source already existed; reused existing source." : "Source added. Keep it inactive first, then use Test this source only.");
     }
   }
@@ -216,68 +331,99 @@ export function OpportunityRadarClient() {
     else { setAngles((current) => [...current, payload.data as StrategicAngle]); setNewAngle(emptyAngle()); }
   }
 
+  function renderSignalCard(signal: RadarSignal) {
+    const fitScore = fitScoreValue(signal);
+    const action = recommendedAction(signal);
+    return <article className="card radar-card" key={signal.id}>
+      <div className="row"><strong>{signal.company || "Unknown company"}</strong><span className="badge">{signal.signal_type}</span><span className={fitScore >= 80 ? "badge accent" : "badge warning"}>Fit {fitScore}</span><span className="badge">{actionLabel(action)}</span></div>
+      <h3>{signal.headline}</h3>
+      <p className="muted">{signal.source_name} · {signal.published_at ? formatDate(signal.published_at) : "Unknown date"} · Template: {recommendedResumeTemplate(signal)}</p>
+      <p>{signal.summary}</p>
+      <p className="muted">Suggested angle: {signal.suggested_angle || "None"}</p>
+      {signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">Open source</a> : null}
+      <div className="filter-grid">
+        <label>Company<input value={signal.company ?? ""} onChange={(e) => void patchSignal(signal.id, { company: e.target.value })} /></label>
+        <label>Action<select value={action} onChange={(e) => void patchSignal(signal.id, { recommended_action: e.target.value as RadarRecommendedAction })}><option value="apply">Apply</option><option value="message">Message</option><option value="monitor">Monitor</option><option value="ignore">Ignore</option></select></label>
+        <label>Resume template<input value={signal.recommended_resume_template ?? recommendedResumeTemplate(signal)} onChange={(e) => void patchSignal(signal.id, { recommended_resume_template: e.target.value })} /></label>
+      </div>
+      <details>
+        <summary>Scorecard: role 25, sector 20, level 15, Joris edge 20, network 10, timing 10</summary>
+        <div className="filter-grid" style={{ marginTop: "12px" }}>
+          {scoreFields.map((field) => <label key={field.key}>{field.label} / {field.max}<input type="number" min="0" max={field.max} value={signal[field.key] ?? ""} onChange={(e) => void patchSignalScore(signal, field, e.target.value)} /></label>)}
+        </div>
+      </details>
+      <div className="row">
+        <button className="secondary" onClick={() => void createTarget(signal, "research")}>Save target</button>
+        <button className="secondary" onClick={() => void createTarget(signal, "watching")}>Watch</button>
+        <button className="secondary" onClick={() => void buildPrompt("weekly_review", signal)}><CopyIcon />Review prompt</button>
+        <button className="secondary" onClick={() => void buildPrompt("application_prep", signal)}><CopyIcon />Application prep</button>
+        <button className="secondary" onClick={() => void buildPrompt("proposal_outreach", signal)}><CopyIcon />Outreach</button>
+        <button className="secondary" onClick={() => void patchSignal(signal.id, { status: "dismissed" })}>Dismiss</button>
+        <button onClick={() => void convertSignal(signal)}>Convert</button>
+      </div>
+    </article>;
+  }
+
   return <div className="stack">
     <section className="card stack">
-      <h1>Opportunity Radar</h1>
-      <p className="muted">Signal-led sourcing for untapped roles, advisory conversations, and companies to watch. Manual ChatGPT prompts only; no automated outreach.</p>
+      <h1>Opportunity Radar V4</h1>
+      <p className="muted">Signal-led sourcing with manual review, fit scoring, application prep prompts, and optional scheduled source refresh. No automated outreach, no auto-apply, no LinkedIn scraping, and no OpenAI API.</p>
       {message ? <p className={message.toLowerCase().includes("error") || message.toLowerCase().includes("failed") || message.toLowerCase().includes("not available") ? "error" : "muted"}>{message}</p> : null}
       <div className="row">
         {angles.length === 0 ? <button className="secondary" onClick={() => void seedAngles()}>Seed default angles</button> : null}
-        {sources.length === 0 ? <button className="secondary" onClick={() => void seedSources()}>Create starter sources</button> : <button className="secondary" onClick={() => void scan()}>Refresh all active sources</button>}
+        {sources.length === 0 ? <button className="secondary" onClick={() => void seedSources()}>Create starter sources</button> : <button className="secondary" onClick={() => void scan(undefined, true)}>Refresh due sources</button>}
+        {sources.length > 0 ? <button className="secondary" onClick={() => void scan()}>Refresh all active sources</button> : null}
         <span className="muted">Active sources: {metrics.activeSources}</span>
       </div>
     </section>
 
     <section className="metric-grid">
       <div className="metric-card"><span>New signals</span><strong>{metrics.newSignals}</strong></div>
+      <div className="metric-card"><span>High-fit signals</span><strong>{metrics.highSignals}</strong></div>
       <div className="metric-card"><span>Saved targets</span><strong>{metrics.savedTargets}</strong></div>
-      <div className="metric-card"><span>High relevance</span><strong>{metrics.highSignals}</strong></div>
-      <div className="metric-card"><span>Outreach active</span><strong>{metrics.outreachActive}</strong></div>
+      <div className="metric-card"><span>Follow-ups due</span><strong>{dueTargets.length}</strong></div>
       <div className="metric-card"><span>Converted</span><strong>{metrics.converted}</strong></div>
     </section>
 
     <div className="radar-tabs">
-      {(["signals", "targets", "angles", "sources"] as Tab[]).map((item) => <button key={item} className={tab === item ? "" : "secondary"} onClick={() => setTab(item)}>{item === "signals" ? "Signal Inbox" : item === "targets" ? "Saved Targets" : item === "angles" ? "Angle Library" : "Sources / Scanner"}</button>)}
+      {(["review", "signals", "targets", "angles", "sources"] as Tab[]).map((item) => <button key={item} className={tab === item ? "" : "secondary"} onClick={() => setTab(item)}>{item === "review" ? "Review Board" : item === "signals" ? "Signal Inbox" : item === "targets" ? "Saved Targets" : item === "angles" ? "Angle Library" : "Sources / Scanner"}</button>)}
     </div>
+
+    {tab === "review" ? <section className="card stack">
+      <div className="row"><h2>Review Board</h2><button onClick={() => void scan(undefined, true)}>Refresh due sources</button></div>
+      <p className="muted">Start here. Review the top fit signals, turn only the good ones into targets, and copy application prep prompts for the strongest opportunities.</p>
+      {dueTargets.length ? <article className="mini-card stack"><strong>Follow-ups due</strong>{dueTargets.slice(0, 5).map((target) => <p key={target.id}><Link href={`/radar/targets/${target.id}`}>{target.company}</Link> · next action {target.next_action_date}</p>)}</article> : null}
+      <div className="grid">
+        <article className="mini-card stack"><strong>Best current signals</strong><p className="muted">Score 65+ and still active.</p><p>{prioritySignals.length} signal{prioritySignals.length === 1 ? "" : "s"} ready for review.</p></article>
+        <article className="mini-card stack"><strong>This week</strong><p className="muted">Newly found or recently published.</p><p>{weeklySignals.length} signal{weeklySignals.length === 1 ? "" : "s"} from the last 7 days.</p></article>
+      </div>
+      <div className="radar-scroll">
+        {prioritySignals.length === 0 ? <p className="muted">No high-fit signals yet. Refresh due sources or adjust scorecards in the Signal Inbox.</p> : prioritySignals.map(renderSignalCard)}
+      </div>
+    </section> : null}
 
     {tab === "signals" ? <section className="card stack">
       <div className="row"><h2>Signal Inbox</h2><button onClick={() => void scan()}>Refresh all active sources</button></div>
-      <p className="muted">Review signals quickly. Save only companies worth monitoring, researching, or converting into a real opportunity.</p>
+      <p className="muted">Review signals quickly. Save only companies worth monitoring, messaging, applying to, or converting into a real opportunity.</p>
       <div className="filter-grid">
         <label>Status<select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="new">New</option><option value="saved">Saved</option><option value="watching">Watching</option><option value="dismissed">Dismissed</option><option value="converted">Converted</option><option value="all">All</option></select></label>
+        <label>Action<select value={actionFilter} onChange={(e) => setActionFilter(e.target.value as RadarRecommendedAction | "all")}><option value="all">All actions</option><option value="apply">Apply</option><option value="message">Message</option><option value="monitor">Monitor</option><option value="ignore">Ignore</option></select></label>
         <label>Search<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company, headline, angle..." /></label>
       </div>
       <div className="radar-scroll">
-        {shownSignals.length === 0 ? <p className="muted">No matching signals yet. Go to Sources / Scanner, create or activate sources, then refresh active sources.</p> : shownSignals.map((signal) => <article className="card radar-card" key={signal.id}>
-          <div className="row"><strong>{signal.company || "Unknown company"}</strong><span className="badge">{signal.signal_type}</span><span className="badge warning">Score {signal.relevance_score}</span></div>
-          <h3>{signal.headline}</h3>
-          <p className="muted">{signal.source_name} · {signal.published_at ? new Date(signal.published_at).toLocaleDateString() : "Unknown date"}</p>
-          <p>{signal.summary}</p>
-          <p className="muted">Suggested angle: {signal.suggested_angle || "None"}</p>
-          {signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">Open source</a> : null}
-          <label>Company<input value={signal.company ?? ""} onChange={(e) => void patchSignal(signal.id, { company: e.target.value })} /></label>
-          <div className="row">
-            <button className="secondary" onClick={() => void createTarget(signal, "research")}>Save target</button>
-            <button className="secondary" onClick={() => void createTarget(signal, "watching")}>Watch</button>
-            <button className="secondary" onClick={() => void patchSignal(signal.id, { status: "dismissed" })}>Dismiss</button>
-            <button className="secondary" onClick={() => void buildPrompt("company_research", signal)}><CopyIcon />Research prompt</button>
-            <button className="secondary" onClick={() => void buildPrompt("unposted_role", signal)}><CopyIcon />Unposted role</button>
-            <button className="secondary" onClick={() => void buildPrompt("proposal_outreach", signal)}><CopyIcon />Proposal outreach</button>
-            <button onClick={() => void convertSignal(signal)}>Convert</button>
-          </div>
-        </article>)}
+        {shownSignals.length === 0 ? <p className="muted">No matching signals yet. Go to Sources / Scanner, create or activate sources, then refresh active sources.</p> : shownSignals.map(renderSignalCard)}
       </div>
     </section> : null}
 
     {tab === "targets" ? <section className="card stack">
       <h2>Saved Targets</h2>
-      <p className="muted">Targets are companies worth watching or approaching. This is intentionally lighter than a CRM.</p>
+      <p className="muted">Targets are companies worth watching or approaching. Use fit score and recommended action to decide what deserves time.</p>
       <div className="radar-scroll">
         {targets.length === 0 ? <p className="muted">No saved targets yet. Save or watch a signal from the Signal Inbox to create your first target company.</p> : targets.map((target) => <article className="card radar-card" key={target.id}>
-          <div className="row"><strong>{target.company}</strong><span className="badge">{target.target_status}</span><span className="badge accent">{target.outreach_status}</span></div>
-          <p>{target.why_interesting}</p>
-          <p className="muted">{target.proposal_angle || target.pain_hypothesis}</p>
-          <div className="row"><Link href={`/radar/targets/${target.id}`}>Open detail</Link><button className="secondary" onClick={() => void buildPrompt("proposal_outreach", undefined, target)}><CopyIcon />Build outreach</button><button className="secondary" onClick={() => void buildPrompt("unposted_role", undefined, target)}><CopyIcon />Build role</button></div>
+          <div className="row"><strong>{target.company}</strong><span className="badge">{target.target_status}</span><span className="badge accent">{target.outreach_status}</span>{target.fit_score !== null && target.fit_score !== undefined ? <span className="badge warning">Fit {target.fit_score}</span> : null}{target.recommended_action ? <span className="badge">{actionLabel(target.recommended_action)}</span> : null}</div>
+          <p>{target.fit_thesis || target.why_interesting}</p>
+          <p className="muted">{target.selected_resume_template || "No resume template selected"} · {target.proposal_angle || target.pain_hypothesis || "No angle yet"}</p>
+          <div className="row"><Link href={`/radar/targets/${target.id}`}>Open detail</Link><button className="secondary" onClick={() => void buildPrompt("application_prep", undefined, target)}><CopyIcon />Application prep</button><button className="secondary" onClick={() => void buildPrompt("proposal_outreach", undefined, target)}><CopyIcon />Build outreach</button><button className="secondary" onClick={() => void buildPrompt("unposted_role", undefined, target)}><CopyIcon />Build role</button></div>
         </article>)}
       </div>
     </section> : null}
@@ -304,8 +450,9 @@ export function OpportunityRadarClient() {
         <h2>Sources / Scanner</h2>
         <button className="secondary" onClick={() => void seedSources()}>{sources.length === 0 ? "Create starter sources" : "Add missing starter sources"}</button>
         {sources.length > 0 ? <button onClick={() => void scan()}>Refresh active sources</button> : null}
+        {sources.length > 0 ? <button className="secondary" onClick={() => void scan(undefined, true)}>Refresh due only</button> : null}
       </div>
-      <p className="muted">Use presets first. Keep new sources inactive, test them once, then activate only the useful ones.</p>
+      <p className="muted">Use presets first. V4 adds source priority and scan frequency so recurring refreshes stay focused.</p>
       <article className="mini-card stack">
         <div className="row">
           <strong>Recommended sources</strong>
@@ -314,21 +461,22 @@ export function OpportunityRadarClient() {
         <details>
           <summary>Advanced: add custom source or copy source-discovery prompt</summary>
           <div className="stack" style={{ marginTop: "12px" }}>
-            <p className="muted">The Type dropdown only tells the scanner how to read the URL. It does not create a source by itself. Fill Name + URL + Keywords, then click Add source.</p>
+            <p className="muted">The Type dropdown only tells the scanner how to read the URL. Fill Name + URL + Keywords, then click Add source.</p>
             <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
             <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
-            <label>Type<select value={newSource.source_type} onChange={(e) => updateNewSourceType(e.target.value)}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
+            <div className="filter-grid"><label>Type<select value={newSource.source_type} onChange={(e) => updateNewSourceType(e.target.value)}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label><label>Priority<select value={newSource.priority || "medium"} onChange={(e) => setNewSource({ ...newSource, priority: e.target.value })}>{sourcePriorityOptions.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label><label>Frequency<select value={newSource.scan_frequency || "weekly"} onChange={(e) => setNewSource({ ...newSource, scan_frequency: e.target.value })}>{sourceFrequencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div>
             <label>Keywords<input value={typeof newSource.keywords === "string" ? newSource.keywords : newSource.keywords.join(", ")} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="comma separated" /></label>
             <div className="row"><button onClick={() => void createSource()}>Add source</button><button className="secondary" onClick={() => void buildPrompt("source_discovery")}><CopyIcon />Copy source discovery prompt</button></div>
           </div>
         </details>
       </article>
       {sources.length === 0 ? <p className="muted">No sources yet. Create starter sources or add one RSS feed manually.</p> : sources.map((source) => <article className="mini-card stack" key={source.id}>
-        <div className="row"><strong>{source.name}</strong><span className="badge">{sourceTypeLabel(source.source_type)}</span><span className={source.is_active ? "badge accent" : "badge warning"}>{source.is_active ? "Active" : "Inactive"}</span></div>
+        <div className="row"><strong>{source.name}</strong><span className="badge">{sourceTypeLabel(source.source_type)}</span><span className={source.is_active ? "badge accent" : "badge warning"}>{source.is_active ? "Active" : "Inactive"}</span><span className="badge">{source.priority || "medium"}</span><span className="badge">{sourceFrequencyLabel(source.scan_frequency)}</span></div>
         <p className="muted">{source.url}</p>
         {source.keywords?.length ? <p className="muted">Keywords: {source.keywords.join(", ")}</p> : null}
         <p className="muted">Last scan: {source.last_scanned_at ? new Date(source.last_scanned_at).toLocaleString() : "Never"}</p>
         {source.last_error ? <p className="error">Last error: {source.last_error}</p> : null}
+        <div className="filter-grid"><label>Priority<select value={source.priority || "medium"} onChange={(e) => void patchSource(source.id, { priority: e.target.value as RadarSource["priority"] })}>{sourcePriorityOptions.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label><label>Frequency<select value={source.scan_frequency || "weekly"} onChange={(e) => void patchSource(source.id, { scan_frequency: e.target.value as RadarSource["scan_frequency"] })}>{sourceFrequencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div>
         <div className="row">
           <button className="secondary" onClick={() => void scan(source.id)}>Test this source only</button>
           <button className="secondary" onClick={() => void patchSource(source.id, { is_active: !source.is_active })}>{source.is_active ? "Deactivate" : "Activate"}</button>
