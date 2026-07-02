@@ -55,7 +55,7 @@ export async function GET() {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   try {
-    const { data, error } = await (supabase as any).from("radar_signals").select("*").order("fit_score", { ascending: false, nullsFirst: false }).order("relevance_score", { ascending: false }).order("published_at", { ascending: false, nullsFirst: false }).limit(250);
+    const { data, error } = await (supabase as any).from("radar_signals").select("*").order("relevance_score", { ascending: false }).order("published_at", { ascending: false, nullsFirst: false }).limit(250);
     if (error) throw error;
     return NextResponse.json({ data: (data ?? []).filter(isFreshOrUndated) });
   } catch (error) {
