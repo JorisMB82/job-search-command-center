@@ -2,8 +2,21 @@ import { NextResponse } from "next/server";
 import { getServerSupabaseClient } from "../../../../lib/supabase";
 import { normalizeText, radarError, readJson } from "../../../../lib/radar-api";
 
+const SOURCE_PRIORITIES = new Set(["high", "medium", "low"]);
+const SCAN_FREQUENCIES = new Set(["daily", "weekdays", "twice_weekly", "weekly", "manual"]);
+
 function normalizeKeywords(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).map((item: string) => item.trim()).filter(Boolean) : [];
+}
+
+function normalizeSourcePriority(value: unknown) {
+  const normalized = normalizeText(value);
+  return normalized && SOURCE_PRIORITIES.has(normalized) ? normalized : "medium";
+}
+
+function normalizeScanFrequency(value: unknown) {
+  const normalized = normalizeText(value);
+  return normalized && SCAN_FREQUENCIES.has(normalized) ? normalized : "weekly";
 }
 
 export async function GET() {
@@ -14,6 +27,7 @@ export async function GET() {
       .from("radar_sources")
       .select("*")
       .order("is_active", { ascending: false })
+      .order("priority", { ascending: true })
       .order("name", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ data });
@@ -46,6 +60,8 @@ export async function POST(request: Request) {
       category: normalizeText(body.category),
       keywords: normalizeKeywords(body.keywords),
       is_active: body.is_active !== false,
+      priority: normalizeSourcePriority(body.priority),
+      scan_frequency: normalizeScanFrequency(body.scan_frequency),
       notes: normalizeText(body.notes),
     };
     const { data, error } = await (supabase as any).from("radar_sources").insert(insert).select("*").single();
@@ -66,6 +82,8 @@ export async function PATCH(request: Request) {
     for (const field of ["name", "url", "source_type", "category", "notes", "last_error"]) if (body[field] !== undefined) update[field] = normalizeText(body[field]);
     if (body.keywords !== undefined) update.keywords = normalizeKeywords(body.keywords);
     if (body.is_active !== undefined) update.is_active = Boolean(body.is_active);
+    if (body.priority !== undefined) update.priority = normalizeSourcePriority(body.priority);
+    if (body.scan_frequency !== undefined) update.scan_frequency = normalizeScanFrequency(body.scan_frequency);
     if (body.last_scanned_at !== undefined) update.last_scanned_at = body.last_scanned_at;
     const { data, error } = await (supabase as any).from("radar_sources").update(update).eq("id", body.id).select("*").single();
     if (error) throw error;
