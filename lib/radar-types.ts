@@ -1,6 +1,9 @@
 export type RadarSourceType = "rss" | "hackernews" | "rwa_news" | "tac_research" | "manual" | "github_search" | "sec_edgar";
+export type RadarSourcePriority = "high" | "medium" | "low";
+export type RadarScanFrequency = "daily" | "weekdays" | "twice_weekly" | "weekly" | "manual";
 export type RadarSignalStatus = "new" | "saved" | "watching" | "dismissed" | "converted";
 export type RadarSignalType = "funding" | "expansion" | "product_launch" | "partnership" | "regulatory" | "hiring" | "market_entry" | "leadership" | "strategic_pivot" | "other";
+export type RadarRecommendedAction = "apply" | "message" | "monitor" | "ignore";
 
 export type RadarSource = {
   id: string;
@@ -12,6 +15,8 @@ export type RadarSource = {
   category: string | null;
   keywords: string[];
   is_active: boolean;
+  priority: RadarSourcePriority;
+  scan_frequency: RadarScanFrequency;
   notes: string | null;
   last_scanned_at: string | null;
   last_error: string | null;
@@ -32,6 +37,15 @@ export type RadarSignal = {
   summary: string | null;
   raw_excerpt: string | null;
   relevance_score: number;
+  role_fit_score: number | null;
+  sector_fit_score: number | null;
+  seniority_fit_score: number | null;
+  joris_edge_score: number | null;
+  network_fit_score: number | null;
+  timing_score: number | null;
+  fit_score: number | null;
+  recommended_action: RadarRecommendedAction | null;
+  recommended_resume_template: string | null;
   status: RadarSignalStatus;
   suggested_angle: string | null;
   notes: string | null;
@@ -69,6 +83,11 @@ export type TargetCompany = {
   best_signal_id: string | null;
   best_angle_id: string | null;
   selected_resume_template: string | null;
+  recommended_action: RadarRecommendedAction | null;
+  message_type: string | null;
+  fit_score: number | null;
+  fit_thesis: string | null;
+  risk_notes: string | null;
   why_interesting: string | null;
   pain_hypothesis: string | null;
   unposted_role_thesis: string | null;
