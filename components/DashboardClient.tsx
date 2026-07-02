@@ -32,7 +32,6 @@ const emptyDraft: OpportunityInsert = {
 const ACTIVE_PIPELINE_STATUSES: OpportunityStatus[] = ["new", "selected", "researching", "outreach_drafted", "outreach_sent", "follow_up_due", "applied", "interviewing", "offer"];
 const CLOSED_STATUSES: OpportunityStatus[] = ["closed", "rejected"];
 const APPLICATION_PROGRESS_STATUSES: OpportunityStatus[] = ["outreach_drafted", "outreach_sent", "follow_up_due", "applied", "interviewing", "offer"];
-const PRIORITY_QUEUE_STATUSES: OpportunityStatus[] = ["outreach_drafted", "outreach_sent", "follow_up_due", "interviewing", "offer"];
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -139,8 +138,9 @@ function getAttentionReasons(opportunity: Opportunity, today: string) {
   return reasons;
 }
 
-function isPriorityQueueCandidate(opportunity: Opportunity, attentionReasons: string[]) {
-  return opportunity.is_pinned || attentionReasons.length > 0 || PRIORITY_QUEUE_STATUSES.includes(opportunity.status);
+function isPriorityQueueCandidate(opportunity: Opportunity) {
+  if (CLOSED_STATUSES.includes(opportunity.status)) return false;
+  return opportunity.is_pinned || opportunity.priority === "high";
 }
 
 function Bar({ label, value, max }: { label: string; value: number; max: number }) {
@@ -250,15 +250,10 @@ export function DashboardClient() {
     const updatedOpportunity = payload.data as Opportunity;
     setOpportunities((current) => current.map((opportunity) => opportunity.id === id ? updatedOpportunity : opportunity));
 
-    if (update.is_pinned !== undefined) {
+    if (update.is_pinned !== undefined || update.priority !== undefined || update.status !== undefined) {
       setPriorityOrder((current) => {
         const withoutCurrent = current.filter((priorityId) => priorityId !== updatedOpportunity.id);
-        const stillPriority = isPriorityQueueCandidate(updatedOpportunity, getAttentionReasons(updatedOpportunity, today));
-        const nextOrder = updatedOpportunity.is_pinned
-          ? [updatedOpportunity.id, ...withoutCurrent]
-          : stillPriority
-            ? [...withoutCurrent, updatedOpportunity.id]
-            : withoutCurrent;
+        const nextOrder = isPriorityQueueCandidate(updatedOpportunity) ? [...withoutCurrent, updatedOpportunity.id] : withoutCurrent;
         writePriorityOrder(nextOrder);
         return nextOrder;
       });
@@ -314,13 +309,11 @@ export function DashboardClient() {
   const priorityQueueItems = useMemo(() => {
     const candidateMap = new Map<string, { opportunity: Opportunity; reasons: string[] }>();
     activeOpportunities.forEach((opportunity) => {
-      const reasons = getAttentionReasons(opportunity, today);
-      if (isPriorityQueueCandidate(opportunity, reasons)) candidateMap.set(opportunity.id, { opportunity, reasons });
+      if (isPriorityQueueCandidate(opportunity)) candidateMap.set(opportunity.id, { opportunity, reasons: getAttentionReasons(opportunity, today) });
     });
 
     const candidateIds = Array.from(candidateMap.keys());
-    const pinnedIds = activeOpportunities.filter((opportunity) => opportunity.is_pinned).map((opportunity) => opportunity.id);
-    const seededOrder = priorityOrder.length ? priorityOrder : pinnedIds;
+    const seededOrder = priorityOrder.length ? priorityOrder : candidateIds;
     const orderedIds = reconcilePriorityOrder(candidateIds, seededOrder);
 
     return orderedIds
@@ -349,6 +342,26 @@ export function DashboardClient() {
     return true;
   });
 
+  function renderOpportunityControls(opportunity: Opportunity, compact = false) {
+    return <div className={compact ? "card-control-grid compact-controls" : "card-control-grid"}>
+      <label>Status<select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+      <label>Priority<select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+      <label>Next action<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void patchOpportunity(opportunity.id, { next_action_date: event.target.value || null })} /></label>
+      <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
+      <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
+    </div>;
+  }
+
+  function renderOpportunitySummary(opportunity: Opportunity, reasons: string[], compact = false) {
+    return <Link className="card-click-area" href={`/opportunities/${opportunity.id}`} aria-label={`Open ${opportunity.role} at ${opportunity.company}`}>
+      <p>{opportunity.company}{opportunity.location ? ` · ${opportunity.location}` : ""} · {opportunity.role_bucket}</p>
+      {!compact ? <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p> : null}
+      <p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>
+      {reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}
+      {opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}
+    </Link>;
+  }
+
   return (
     <div className="stack">
       <section className="metric-grid">
@@ -363,65 +376,60 @@ export function DashboardClient() {
         <div className="dashboard-side stack">
           <section className="card stack">
             <h2>Priority Queue</h2>
-            <p className="muted">Pinned, needs-attention, and active-stage opportunities. Drag cards to reorder this working list.</p>
-            {priorityQueueItems.length === 0 ? <p className="muted">No priority items right now.</p> : <div className="priority-list">{priorityQueueItems.map(({ opportunity, reasons }) => <article className={`mini-card pinned-card priority-card${dragOverPriorityId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} draggable onDragStart={(event) => handlePriorityDragStart(event, opportunity.id)} onDragOver={(event) => { event.preventDefault(); setDragOverPriorityId(opportunity.id); }} onDragLeave={() => setDragOverPriorityId(null)} onDrop={(event) => handlePriorityDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPriorityId(null); setDragOverPriorityId(null); }} aria-label={`Priority opportunity: ${opportunity.role}. Drag to reorder.`}><div className="row"><span className="drag-handle" aria-hidden="true">↕</span><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.priority === "high" ? <span className="badge warning">High</span> : null}{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div><p>{opportunity.company} · {opportunity.role_bucket}</p><p className="muted">Next: {opportunity.next_action_date ?? "No next action date"}</p>{reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}{opportunity.network_notes ? <p>{opportunity.network_notes}</p> : null}<Link href={`/opportunities/${opportunity.id}`}>Open detail</Link></article>)}</div>}
+            <p className="muted">Only high-priority or pinned opportunities. Click a card to open detail; use controls for quick updates; drag by the ↕ handle.</p>
+            {priorityQueueItems.length === 0 ? <p className="muted">No high-priority or pinned items right now.</p> : <div className="priority-list">{priorityQueueItems.map(({ opportunity, reasons }) => <article className={`mini-card pinned-card priority-card${dragOverPriorityId === opportunity.id ? " drag-over" : ""}`} key={opportunity.id} onDragOver={(event) => { event.preventDefault(); setDragOverPriorityId(opportunity.id); }} onDragLeave={() => setDragOverPriorityId(null)} onDrop={(event) => handlePriorityDrop(event, opportunity.id)} onDragEnd={() => { setDraggedPriorityId(null); setDragOverPriorityId(null); }} aria-label={`Priority opportunity: ${opportunity.role}. Drag by the handle to reorder.`}>
+              <div className="row card-title-row"><span className="drag-handle" draggable onDragStart={(event) => handlePriorityDragStart(event, opportunity.id)} aria-label="Drag to reorder" title="Drag to reorder">↕</span><Link className="card-title-link" href={`/opportunities/${opportunity.id}`}>{opportunity.role}</Link><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.priority === "high" ? <span className="badge warning">High</span> : null}{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div>
+              {renderOpportunitySummary(opportunity, reasons, true)}
+              {renderOpportunityControls(opportunity, true)}
+            </article>)}</div>}
           </section>
 
           <section className="card stack"><h2>Resume template map</h2><p className="muted">Shows market volume by saved resume version. Keep template names aligned with how you want prompts matched.</p>{bucketCounts.map(({ bucket, count }) => <Bar key={bucket} label={bucket} value={count} max={maxBucketCount} />)}</section>
         </div>
 
-        <section className="card stack funnel-card"><h2>Status funnel</h2><p className="muted">Count and percentage of the total pipeline in each stage.</p><div className="visual-funnel" aria-label="Opportunity status funnel">{funnelStages.map((stage) => <div className="funnel-band" key={stage.status} style={{ width: `${stage.width}%` }}><span className="funnel-label">{stage.label}</span><strong className="funnel-value">{stage.count} · {formatPercent(stage.count, metrics.total)}</strong></div>)}</div></section>
+        <div className="dashboard-right stack">
+          <section className="card stack funnel-card"><h2>Status funnel</h2><p className="muted">Count and percentage of the total pipeline in each stage.</p><div className="visual-funnel" aria-label="Opportunity status funnel">{funnelStages.map((stage) => <div className="funnel-band" key={stage.status} style={{ width: `${stage.width}%` }}><span className="funnel-label">{stage.label}</span><strong className="funnel-value">{stage.count} · {formatPercent(stage.count, metrics.total)}</strong></div>)}</div></section>
+
+          <section className="card stack opportunities-panel">
+            <div className="opportunities-search-box"><h2>Other Opportunities</h2><p className="muted">Everything not currently high-priority or pinned. Use filters to review the broader pipeline.</p><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Resume template<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value)}><option value="all">All templates</option>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority | "all")}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={showPriorityItems} onChange={(event) => setShowPriorityItems(event.target.checked)} /> Include Priority Queue items</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {showPriorityItems ? opportunities.length : otherOpportunityCount} {showPriorityItems ? "total" : "other"} opportunities.</p></div>
+            <div className="opportunities-scroll" aria-label="Scrollable opportunities list">
+              {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => {
+                const reasons = getAttentionReasons(opportunity, today);
+                return (
+                  <article className="card opportunity-card" key={opportunity.id}>
+                    <div className="row card-title-row"><Link className="card-title-link" href={`/opportunities/${opportunity.id}`}>{opportunity.role}</Link><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.priority === "high" ? <span className="badge warning">High</span> : null}{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div>
+                    {renderOpportunitySummary(opportunity, reasons)}
+                    {renderOpportunityControls(opportunity)}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
       </div>
 
-      <div className="grid opportunity-workspace">
-        <section className="card stack create-opportunity-panel">
-          <h2>Create opportunity</h2>
-          <label>Source URL (optional)<div className="row"><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://company.example/jobs/123" /><button type="button" disabled={!sourceUrl || loading} onClick={extractFromUrl}>Extract</button></div></label>
-          <form className="stack" onSubmit={saveOpportunity}>
-            <label>Company<input value={draft.company} onChange={(event) => setDraft({ ...draft, company: event.target.value })} required /></label>
-            <label>Role<input value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value, role_bucket: pickBucketByKeywords(event.target.value, draft.job_description, bucketOptions) })} required /></label>
-            <label>Location<input value={draft.location ?? ""} onChange={(event) => setDraft({ ...draft, location: event.target.value })} /></label>
-            <label>URL<input value={draft.url ?? ""} onChange={(event) => setDraft({ ...draft, url: event.target.value })} /></label>
-            <label>Source<input value={draft.source ?? ""} onChange={(event) => setDraft({ ...draft, source: event.target.value })} placeholder="Wellfound, LinkedIn, company site, recruiter, referral" /></label>
-            <label>Listing posted date<input type="date" value={draft.listing_posted_date ?? ""} onChange={(event) => setDraft({ ...draft, listing_posted_date: event.target.value || null })} /></label>
-            <label>Resume template / bucket<select value={draft.role_bucket} onChange={(event) => setDraft({ ...draft, role_bucket: event.target.value })}>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
-            <label>Priority<select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
-            <label>Status<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
-            <label>Next action date<input type="date" value={draft.next_action_date ?? ""} onChange={(event) => setDraft({ ...draft, next_action_date: event.target.value || null })} /></label>
-            <label className="checkbox-row"><input type="checkbox" checked={draft.is_pinned} onChange={(event) => setDraft({ ...draft, is_pinned: event.target.checked })} /> Pin as priority item</label>
-            <label>Job description<textarea value={draft.job_description} onChange={(event) => setDraft({ ...draft, job_description: event.target.value, role_bucket: pickBucketByKeywords(draft.role, event.target.value, bucketOptions) })} required /></label>
-            <label>Network notes<textarea value={draft.network_notes ?? ""} onChange={(event) => setDraft({ ...draft, network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
-            <label>General notes<textarea value={draft.general_notes ?? draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, general_notes: event.target.value, notes: event.target.value })} placeholder="Manual call notes, recruiter context, compensation notes, or initial observations." /></label>
-            <button type="submit">Save opportunity</button>
-          </form>
-          {message ? <p className={message.includes("not") || message.includes("Could") || message.includes("error") ? "error" : "muted"}>{message}</p> : null}
-        </section>
-
-        <section className="card stack opportunities-panel">
-          <div className="opportunities-search-box"><h2>Other Opportunities</h2><p className="muted">Priority Queue items are hidden here by default to avoid duplication.</p><label className="search-row">Search<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search company, role, source, dates, notes, contact path..." /></label><div className="filter-grid"><label>Resume template<select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value)}><option value="all">All templates</option>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus | "all")}><option value="all">All statuses</option>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label><label>Priority<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as OpportunityPriority)}><option value="all">All priorities</option>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label className="checkbox-row"><input type="checkbox" checked={showPriorityItems} onChange={(event) => setShowPriorityItems(event.target.checked)} /> Show Priority Queue items too</label><button className="secondary" type="button" onClick={clearFilters}>Clear filters</button></div><p className="muted">Showing {filteredOpportunities.length} of {showPriorityItems ? opportunities.length : otherOpportunityCount} {showPriorityItems ? "total" : "other"} opportunities.</p></div>
-          <div className="opportunities-scroll" aria-label="Scrollable opportunities list">
-            {filteredOpportunities.length === 0 ? <p className="muted">No opportunities match these filters.</p> : filteredOpportunities.map((opportunity) => {
-              const reasons = getAttentionReasons(opportunity, today);
-              return (
-                <article className="card opportunity-card" key={opportunity.id}>
-                  <div className="row"><strong>{opportunity.role}</strong><span className="badge">{STATUS_LABELS[opportunity.status]}</span>{opportunity.is_pinned ? <span className="badge accent">Pinned</span> : null}{reasons.length ? <span className="badge warning">Needs attention</span> : null}</div>
-                  <p>{opportunity.company}{opportunity.location ? ` · ${opportunity.location}` : ""}</p>
-                  <p className="date-line">Posted: {formatDate(opportunity.listing_posted_date)} · Saved: {formatDate(opportunity.created_at)} ({formatAgeFrom(opportunity.created_at)})</p>
-                  <p className="muted">{opportunity.role_bucket} · {PRIORITY_LABELS[opportunity.priority]} priority{opportunity.source ? ` · ${opportunity.source}` : ""}</p>
-                  {reasons.length ? <p className="attention-note">Needs attention: {reasons[0]}{reasons.length > 1 ? ` + ${reasons.length - 1} more` : ""}</p> : null}
-                  <div className="card-control-grid">
-                    <label>Status<select value={opportunity.status} onChange={(event) => void patchOpportunity(opportunity.id, { status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
-                    <label>Priority<select value={opportunity.priority} onChange={(event) => void patchOpportunity(opportunity.id, { priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
-                    <label>Next action<input type="date" value={opportunity.next_action_date ?? ""} onChange={(event) => void patchOpportunity(opportunity.id, { next_action_date: event.target.value || null })} /></label>
-                    <button className="secondary" type="button" onClick={() => void patchOpportunity(opportunity.id, { is_pinned: !opportunity.is_pinned })}>{opportunity.is_pinned ? "Unpin" : "Pin"}</button>
-                    <Link href={`/opportunities/${opportunity.id}`}>Open detail</Link>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+      <section className="card stack create-opportunity-panel">
+        <h2>Create opportunity</h2>
+        <label>Source URL (optional)<div className="row"><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://company.example/jobs/123" /><button type="button" disabled={!sourceUrl || loading} onClick={extractFromUrl}>Extract</button></div></label>
+        <form className="stack" onSubmit={saveOpportunity}>
+          <label>Company<input value={draft.company} onChange={(event) => setDraft({ ...draft, company: event.target.value })} required /></label>
+          <label>Role<input value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value, role_bucket: pickBucketByKeywords(event.target.value, draft.job_description, bucketOptions) })} required /></label>
+          <label>Location<input value={draft.location ?? ""} onChange={(event) => setDraft({ ...draft, location: event.target.value })} /></label>
+          <label>URL<input value={draft.url ?? ""} onChange={(event) => setDraft({ ...draft, url: event.target.value })} /></label>
+          <label>Source<input value={draft.source ?? ""} onChange={(event) => setDraft({ ...draft, source: event.target.value })} placeholder="Wellfound, LinkedIn, company site, recruiter, referral" /></label>
+          <label>Listing posted date<input type="date" value={draft.listing_posted_date ?? ""} onChange={(event) => setDraft({ ...draft, listing_posted_date: event.target.value || null })} /></label>
+          <label>Resume template / bucket<select value={draft.role_bucket} onChange={(event) => setDraft({ ...draft, role_bucket: event.target.value })}>{bucketOptions.map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}</select></label>
+          <label>Priority<select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as OpportunityPriority })}>{OPPORTUNITY_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+          <label>Status<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as OpportunityStatus })}>{OPPORTUNITY_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+          <label>Next action date<input type="date" value={draft.next_action_date ?? ""} onChange={(event) => setDraft({ ...draft, next_action_date: event.target.value || null })} /></label>
+          <label className="checkbox-row"><input type="checkbox" checked={draft.is_pinned} onChange={(event) => setDraft({ ...draft, is_pinned: event.target.checked })} /> Pin as priority item</label>
+          <label>Job description<textarea value={draft.job_description} onChange={(event) => setDraft({ ...draft, job_description: event.target.value, role_bucket: pickBucketByKeywords(draft.role, event.target.value, bucketOptions) })} required /></label>
+          <label>Network notes<textarea value={draft.network_notes ?? ""} onChange={(event) => setDraft({ ...draft, network_notes: event.target.value })} placeholder="Warm intro path, LinkedIn search notes, alumni/contact ideas" /></label>
+          <label>General notes<textarea value={draft.general_notes ?? draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, general_notes: event.target.value, notes: event.target.value })} placeholder="Manual call notes, recruiter context, compensation notes, or initial observations." /></label>
+          <button type="submit">Save opportunity</button>
+        </form>
+        {message ? <p className={message.includes("not") || message.includes("Could") || message.includes("error") ? "error" : "muted"}>{message}</p> : null}
+      </section>
     </div>
   );
 }
