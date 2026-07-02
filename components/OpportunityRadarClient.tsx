@@ -98,6 +98,12 @@ function fitScoreValue(signal: RadarSignal) {
   return signal.fit_score ?? Math.min(100, Math.max(0, Math.round((signal.relevance_score || 0) * 10)));
 }
 
+function scorePartsTotal(signal: RadarSignal) {
+  const values = scoreFields.map((field) => signal[field.key]);
+  if (values.every((value) => value === null || value === undefined)) return null;
+  return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+}
+
 function actionForScore(score: number): RadarRecommendedAction {
   if (score >= 80) return "apply";
   if (score >= 65) return "message";
@@ -193,7 +199,6 @@ export function OpportunityRadarClient() {
     newSignals: signals.filter((s) => s.status === "new").length,
     savedTargets: targets.length,
     highSignals: signals.filter((s) => fitScoreValue(s) >= 80 && s.status !== "dismissed").length,
-    outreachActive: targets.filter((t) => !["not_contacted", "archived", "converted"].includes(t.outreach_status)).length,
     converted: signals.filter((s) => s.status === "converted").length + targets.filter((t) => t.target_status === "converted").length,
     activeSources: sources.filter((source) => source.is_active).length,
   }), [signals, targets, sources]);
@@ -331,6 +336,34 @@ export function OpportunityRadarClient() {
     else { setAngles((current) => [...current, payload.data as StrategicAngle]); setNewAngle(emptyAngle()); }
   }
 
+  function renderScorecard(signal: RadarSignal) {
+    const fitScore = fitScoreValue(signal);
+    const manualTotal = scorePartsTotal(signal);
+    return <div className="mini-card" style={{ marginTop: "12px", padding: "12px" }}>
+      <div className="row" style={{ alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+        <strong>Manual score inputs</strong>
+        <span className="badge warning">Fit {fitScore}</span>
+        {manualTotal === null ? <span className="muted">Auto-derived from relevance. Fill any box to override.</span> : <span className="muted">Manual parts total: {manualTotal}/100. Saves when you leave a box.</span>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "8px", alignItems: "end" }}>
+        {scoreFields.map((field) => <label key={field.key} style={{ display: "grid", gap: "4px", fontSize: "0.85rem", fontWeight: 700 }}>
+          <span>{field.label} <span className="muted">/{field.max}</span></span>
+          <input
+            type="number"
+            min="0"
+            max={field.max}
+            step="1"
+            placeholder={`0-${field.max}`}
+            defaultValue={signal[field.key] ?? ""}
+            onBlur={(e) => void patchSignalScore(signal, field, e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            style={{ height: "34px", minHeight: "34px", padding: "6px 8px", fontSize: "0.95rem" }}
+          />
+        </label>)}
+      </div>
+    </div>;
+  }
+
   function renderSignalCard(signal: RadarSignal) {
     const fitScore = fitScoreValue(signal);
     const action = recommendedAction(signal);
@@ -346,12 +379,7 @@ export function OpportunityRadarClient() {
         <label>Action<select value={action} onChange={(e) => void patchSignal(signal.id, { recommended_action: e.target.value as RadarRecommendedAction })}><option value="apply">Apply</option><option value="message">Message</option><option value="monitor">Monitor</option><option value="ignore">Ignore</option></select></label>
         <label>Resume template<input value={signal.recommended_resume_template ?? recommendedResumeTemplate(signal)} onChange={(e) => void patchSignal(signal.id, { recommended_resume_template: e.target.value })} /></label>
       </div>
-      <details>
-        <summary>Scorecard: role 25, sector 20, level 15, Joris edge 20, network 10, timing 10</summary>
-        <div className="filter-grid" style={{ marginTop: "12px" }}>
-          {scoreFields.map((field) => <label key={field.key}>{field.label} / {field.max}<input type="number" min="0" max={field.max} value={signal[field.key] ?? ""} onChange={(e) => void patchSignalScore(signal, field, e.target.value)} /></label>)}
-        </div>
-      </details>
+      {renderScorecard(signal)}
       <div className="row">
         <button className="secondary" onClick={() => void createTarget(signal, "research")}>Save target</button>
         <button className="secondary" onClick={() => void createTarget(signal, "watching")}>Watch</button>
