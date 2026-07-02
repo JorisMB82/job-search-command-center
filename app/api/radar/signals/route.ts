@@ -14,7 +14,7 @@ function isFreshOrUndated(signal: { published_at?: string | null }) {
   return Date.now() - published <= MAX_SIGNAL_AGE_DAYS * DAY_MS;
 }
 
-function clampScore(value: unknown, max: number) {
+function clampScore(value: unknown, max: number): number | null {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Math.round(Number(value));
   if (!Number.isFinite(numeric)) return null;
@@ -35,7 +35,7 @@ function normalizeRecommendedAction(value: unknown, score?: number | null) {
   return recommendedAction(score);
 }
 
-function scoreFromParts(value: Record<string, any>) {
+function scoreFromParts(value: Record<string, any>): number | null {
   const parts = [
     clampScore(value.role_fit_score, 25),
     clampScore(value.sector_fit_score, 20),
@@ -44,7 +44,7 @@ function scoreFromParts(value: Record<string, any>) {
     clampScore(value.network_fit_score, 10),
     clampScore(value.timing_score, 10),
   ];
-  return parts.every((part) => part === null) ? null : parts.reduce((sum, part) => sum + (part ?? 0), 0);
+  return parts.every((part) => part === null) ? null : parts.reduce<number>((sum, part) => sum + (part ?? 0), 0);
 }
 
 function fallbackScoreFromRelevance(relevanceScore: number) {
