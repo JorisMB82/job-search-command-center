@@ -72,7 +72,7 @@ async function scanRadarSources(sources: RadarSource[], supabase: any) {
 }
 
 function isAuthorizedCron(request: Request) {
-  const secret = process.env.RADAR_CRON_SECRET;
+  const secret = process.env.RADAR_CRON_SECRET || process.env.CRON_SECRET;
   if (!secret) return false;
   const auth = request.headers.get("authorization") || "";
   return auth === `Bearer ${secret}`;
