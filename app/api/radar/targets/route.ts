@@ -50,7 +50,7 @@ export async function GET() {
   const supabase = getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   try {
-    const { data, error } = await (supabase as any).from("target_companies").select("*").order("fit_score", { ascending: false, nullsFirst: false }).order("updated_at", { ascending: false });
+    const { data, error } = await (supabase as any).from("target_companies").select("*").order("updated_at", { ascending: false });
     if (error) throw error;
     return NextResponse.json({ data });
   } catch (error) {
