@@ -1,380 +1,301 @@
-import type { RadarSignalType, RadarSource } from "./radar-types";
+import { createServerSupabaseClient } from "./radar-supabase";
+import type { RadarSource, RadarSignalInsert } from "./radar-types";
 
-export type ScannedSignal = {
-  source_id: string | null;
-  company: string | null;
-  headline: string;
-  url: string | null;
-  source_name: string | null;
-  published_at: string | null;
-  signal_type: RadarSignalType;
-  category: string | null;
-  summary: string | null;
-  raw_excerpt: string | null;
-  relevance_score: number;
-  status: "new";
-  suggested_angle: string | null;
-  notes: string | null;
-  chatgpt_output: string | null;
-  dedupe_key: string;
-};
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-const TIMEOUT_MS = 10000;
-const MIN_RELEVANCE_SCORE = 3;
-const MAX_SIGNAL_AGE_DAYS = 30;
-const DAY_MS = 1000 * 60 * 60 * 24;
-const RWA_NEWS_URL = "https://app.rwa.xyz/news";
-const TAC_RESEARCH_URL = "https://www.tacoalition.org/research";
-const FUNDING = ["raised", "funding", "seed", "series a", "series b", "series c", "investment", "round", "capital"];
-const EXPANSION = ["expands", "expansion", "launches in", "enters", "market entry", "u.s.", "us market", "north america", "new market"];
-const PRODUCT = ["launches", "unveils", "introduces", "platform", "product", "solution"];
-const PARTNER = ["partners", "partnership", "collaboration", "integrates", "integration"];
-const REGULATORY = ["sec", "finra", "nydfs", "broker-dealer", "ats", "custody", "custodian", "license", "regulated", "compliance"];
-const RWA = ["tokenization", "tokenized", "rwa", "real-world assets", "digital assets", "stablecoin", "blockchain", "private markets", "on-chain", "custody"];
-const HIRING = ["hiring", "scaling", "team", "growth", "chief of staff", "operations", "partnerships", "go-to-market", "gtm"];
-const RWA_INTERNAL_HOSTS = new Set(["app.rwa.xyz", "rwa.xyz", "www.rwa.xyz", "rwa.news", "docs.rwa.xyz"]);
+const RELEVANCE_KEYWORDS: string[] = [
+  "chief of staff", "head of", "vp of", "director of", "strategy", "operations",
+  "business development", "partnerships", "corporate development", "growth",
+  "general manager", "chief operating", "president",
+  "tokenization", "digital assets", "rwa", "blockchain", "crypto", "web3",
+  "defi", "stablecoin", "fintech", "payments", "capital markets",
+  "asset management", "investment", "venture",
+  "startup", "early stage", "seed", "series a", "series b",
+  "remote", "new york", "nyc", "manhattan",
+];
 
-function hasAny(text: string, terms: string[]) {
-  return terms.some((term) => text.includes(term));
+const ROLE_EXCLUDE_KEYWORDS: string[] = [
+  "software engineer", "frontend", "backend", "fullstack", "full stack",
+  "devops", "sre", "machine learning", "data scientist", "data engineer",
+  "mobile developer", "ios developer", "android developer", "qa engineer",
+  "security engineer", "cloud engineer", "platform engineer",
+];
+
+interface ParsedJob {
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  description: string;
+  postedAt: Date | null;
 }
 
-function decodeHtml(value: string) {
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+function extractTag(xml: string, tag: string): string {
+  const cdataMatch = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, "i").exec(xml);
+  if (cdataMatch) return cdataMatch[1].trim();
+  const match = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i").exec(xml);
+  return match ? match[1].replace(/<[^>]+>/g, "").trim() : "";
+}
+
+function extractAllTags(xml: string, tag: string): string[] {
+  const results: string[] = [];
+  const pattern = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(xml)) !== null) {
+    results.push(match[0]);
+  }
+  return results;
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<p[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
-    .replace(/&nbsp;/g, " ")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'");
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#\d+;/g, "")
+    .replace(/\s{3,}/g, " ")
+    .trim();
 }
 
-function compactText(value: string) {
-  return decodeHtml(value).replace(/\s+/g, " ").trim();
-}
-
-function stripHtml(value: string) {
-  return compactText(value.replace(/<[^>]*>/g, " "));
-}
-
-function decodeXml(value: string) {
-  return compactText(value);
-}
-
-function tag(item: string, name: string) {
-  const match = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\/${name}>`, "i"));
-  return match ? decodeXml(match[1]) : "";
-}
-
-function attrLink(item: string) {
-  const match = item.match(/<link[^>]+href=["']([^"']+)["'][^>]*>/i);
-  return match ? decodeXml(match[1]) : "";
-}
-
-function classify(text: string): RadarSignalType {
-  if (hasAny(text, FUNDING)) return "funding";
-  if (hasAny(text, EXPANSION)) return "expansion";
-  if (hasAny(text, PARTNER)) return "partnership";
-  if (hasAny(text, REGULATORY)) return "regulatory";
-  if (hasAny(text, HIRING)) return "hiring";
-  if (hasAny(text, PRODUCT)) return "product_launch";
-  return "other";
-}
-
-function signalAgeDays(publishedAt: string | null) {
-  if (!publishedAt) return null;
-  const parsed = new Date(publishedAt).getTime();
-  if (Number.isNaN(parsed)) return null;
-  return (Date.now() - parsed) / DAY_MS;
-}
-
-function isRecentEnough(publishedAt: string | null) {
-  const age = signalAgeDays(publishedAt);
-  if (age === null) return true;
-  return age <= MAX_SIGNAL_AGE_DAYS;
-}
-
-function score(text: string, publishedAt: string | null, category: string | null) {
-  let total = 0;
-  if (hasAny(text, FUNDING)) total += 3;
-  if (hasAny(text, EXPANSION)) total += 3;
-  if (hasAny(text, RWA)) total += 3;
-  if (hasAny(text, PARTNER)) total += 2;
-  if (hasAny(text, REGULATORY)) total += 2;
-  if (hasAny(text, HIRING)) total += 2;
-  if (hasAny(text, PRODUCT)) total += 2;
-  if (text.includes("strategy") || text.includes("operations") || text.includes("gtm") || text.includes("partnerships")) total += 2;
-  if (category) total += 1;
-  const age = signalAgeDays(publishedAt);
-  if (age !== null && age <= MAX_SIGNAL_AGE_DAYS) total += 2;
-  return total;
-}
-
-function suggestedAngle(text: string) {
-  if (hasAny(text, EXPANSION) || hasAny(text, REGULATORY)) return "U.S. Market Entry / Regulatory GTM";
-  if (hasAny(text, RWA)) return "RWA / Tokenization Strategy & Execution";
-  if (hasAny(text, FUNDING) || hasAny(text, HIRING)) return "Founder’s Office / Strategic Projects";
-  if (hasAny(text, PARTNER)) return "Partnerships / Corporate Development";
-  if (text.includes("trade finance") || text.includes("commodity") || text.includes("warehouse") || text.includes("collateral")) return "Trade Finance / Commodity Finance Structuring";
-  return "Founder’s Office / Strategic Projects";
-}
-
-function extractCompany(headline: string) {
-  const cleaned = headline.replace(/^[^:]+:\s*/, "").trim();
-  const match = cleaned.match(/^(.+?)\s+(raises|raised|launches|partners|announces|expands|unveils|introduces|secures|closes)\b/i);
-  return match ? match[1].replace(/[,:-]+$/, "").trim() : null;
-}
-
-function dedupe(url: string | null, headline: string, source: string | null) {
-  const base = url || `${source || "source"}:${headline}`;
-  return base.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 180);
-}
-
-function isRelevant(signal: ScannedSignal) {
-  return signal.relevance_score >= MIN_RELEVANCE_SCORE && signal.headline.trim().length > 0 && isRecentEnough(signal.published_at);
-}
-
-async function fetchText(url: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+function parseRssDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { "user-agent": "JobSearchCommandCenter/1.0" } });
-    if (!response.ok) throw new Error(`Fetch failed with ${response.status}`);
-    return await response.text();
-  } finally {
-    clearTimeout(timeout);
-  }
+    const d = new Date(dateStr);
+    return Number.isNaN(d.getTime()) ? null : d;
+  } catch { return null; }
 }
 
-function parseDate(value: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+function parseLocationFromText(text: string): string {
+  const lower = text.toLowerCase();
+  if (lower.includes("new york") || lower.includes("nyc")) return "New York, NY";
+  if (lower.includes("san francisco") || lower.includes("sf")) return "San Francisco, CA";
+  if (lower.includes("remote")) return "Remote";
+  if (lower.includes("london")) return "London";
+  return "";
 }
 
-function absoluteUrl(href: string, baseUrl: string) {
-  try {
-    return new URL(decodeHtml(href), baseUrl).toString();
-  } catch {
-    return null;
-  }
-}
+async function parseJobRssFeed(source: RadarSource): Promise<ParsedJob[]> {
+  const response = await fetch(source.url, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const xml = await response.text();
+  const items = extractAllTags(xml, "item");
+  const jobs: ParsedJob[] = [];
 
-function hostLabel(url: string | null) {
-  if (!url) return null;
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return null;
-  }
-}
+  for (const item of items) {
+    const title = stripHtml(extractTag(item, "title"));
+    const link = extractTag(item, "link") || extractTag(item, "guid");
+    const description = stripHtml(extractTag(item, "description") || extractTag(item, "content:encoded") || "");
+    const pubDate = parseRssDate(extractTag(item, "pubDate") || extractTag(item, "dc:date"));
 
-function isRwaNavigationHeadline(headline: string) {
-  const lower = headline.toLowerCase();
-  return [
-    "subscribe",
-    "sign up",
-    "log in",
-    "market overview",
-    "asset screener",
-    "data api",
-    "documentation",
-    "privacy policy",
-    "terms of use",
-    "register your assets",
-  ].some((term) => lower.includes(term));
-}
+    let company = extractTag(item, "company") || extractTag(item, "author") || "";
+    if (!company) {
+      const atMatch = /\bat\s+([^[\]()\n]+?)(?:\s*[-|·]|$)/i.exec(title);
+      if (atMatch) company = atMatch[1].trim();
+    }
 
-function isTacNavigationHeadline(headline: string, href: string) {
-  const lower = headline.toLowerCase().replace(/\s+/g, " ").trim();
-  const hrefLower = href.toLowerCase();
-  if (!lower || headline.length < 12) return true;
-  if (hrefLower.startsWith("mailto:") || hrefLower.startsWith("#")) return true;
-  if (["research", "protocol", "membership", "about", "subscribe", "browse all", "listen", "read this week", "browse reports", "x / twitter", "linkedin"].includes(lower)) return true;
-  return [
-    "market indices",
-    "loading feed",
-    "privacy policy",
-    "terms of use",
-    "©",
-  ].some((term) => lower.includes(term));
-}
+    const location = stripHtml(
+      extractTag(item, "location") ||
+      extractTag(item, "job:location") ||
+      extractTag(item, "georss:featureName") || ""
+    ) || parseLocationFromText(title + " " + description);
 
-function sourceOriginLabel(host: string | null) {
-  if (!host) return "unknown source";
-  if (host === "tacoalition.org") return "Tokenized Asset Coalition";
-  return host;
-}
-
-export async function scanRssSource(source: RadarSource): Promise<ScannedSignal[]> {
-  const xml = await fetchText(source.url);
-  const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/gi)].map((m) => m[0]);
-  const entries = items.length ? items : [...xml.matchAll(/<entry[\s\S]*?<\/entry>/gi)].map((m) => m[0]);
-  return entries.slice(0, 25).map((item) => {
-    const headline = stripHtml(tag(item, "title"));
-    const link = tag(item, "link") || attrLink(item) || null;
-    const raw = tag(item, "description") || tag(item, "summary") || tag(item, "content") || "";
-    const summary = stripHtml(raw).slice(0, 500);
-    const published = parseDate(tag(item, "pubDate") || tag(item, "published") || tag(item, "updated"));
-    const text = `${headline} ${summary}`.toLowerCase();
-    return {
-      source_id: source.id,
-      company: extractCompany(headline),
-      headline: headline || "Untitled signal",
+    jobs.push({
+      title: title || "Unknown role",
+      company: company || "Unknown company",
+      location,
       url: link,
-      source_name: source.name,
-      published_at: published,
-      signal_type: classify(text),
-      category: source.category,
-      summary,
-      raw_excerpt: summary,
-      relevance_score: score(text, published, source.category),
-      status: "new" as const,
-      suggested_angle: suggestedAngle(text),
-      notes: null,
-      chatgpt_output: null,
-      dedupe_key: dedupe(link, headline, source.name),
-    };
-  }).filter(isRelevant);
+      description: description.slice(0, 2000),
+      postedAt: pubDate,
+    });
+  }
+  return jobs;
 }
 
-export async function scanHackerNewsSource(source: RadarSource): Promise<ScannedSignal[]> {
-  const query = encodeURIComponent(source.keywords?.join(" ") || source.url || "fintech startup funding");
-  const cutoffUnixSeconds = Math.floor((Date.now() - MAX_SIGNAL_AGE_DAYS * DAY_MS) / 1000);
-  const raw = await fetchText(`https://hn.algolia.com/api/v1/search_by_date?query=${query}&tags=story&numericFilters=created_at_i>=${cutoffUnixSeconds}`);
-  const json = JSON.parse(raw) as { hits?: Array<{ title?: string; url?: string; created_at?: string; story_text?: string }> };
-  return (json.hits ?? []).slice(0, 20).map((hit) => {
-    const headline = hit.title || "Hacker News signal";
-    const summary = stripHtml(hit.story_text || "").slice(0, 500);
-    const published = parseDate(hit.created_at || "");
-    const text = `${headline} ${summary}`.toLowerCase();
-    return {
-      source_id: source.id,
-      company: extractCompany(headline),
-      headline,
-      url: hit.url || null,
-      source_name: source.name,
-      published_at: published,
-      signal_type: classify(text),
-      category: source.category,
-      summary,
-      raw_excerpt: summary,
-      relevance_score: score(text, published, source.category),
-      status: "new" as const,
-      suggested_angle: suggestedAngle(text),
-      notes: null,
-      chatgpt_output: null,
-      dedupe_key: dedupe(hit.url || null, headline, source.name),
-    };
-  }).filter(isRelevant);
+async function parseWellfoundFeed(source: RadarSource): Promise<ParsedJob[]> {
+  const query = encodeURIComponent(source.url);
+  const url = `https://wellfound.com/api/v2/jobs?query=${query}&page=1`;
+  const response = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)", "Accept": "application/json" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Wellfound API HTTP ${response.status}`);
+
+  type WellfoundJob = {
+    title?: string;
+    startup?: { name?: string };
+    remote?: boolean;
+    locationNames?: string[];
+    jobUrl?: string;
+    description?: string;
+    createdAt?: string;
+  };
+  const data = (await response.json()) as { jobs?: WellfoundJob[] };
+  return (data.jobs ?? []).map((job) => ({
+    title: job.title ?? "Unknown role",
+    company: job.startup?.name ?? "Unknown company",
+    location: [...(job.remote ? ["Remote"] : []), ...(job.locationNames ?? [])].join(", ") || "Unknown",
+    url: job.jobUrl ?? "",
+    description: stripHtml(job.description ?? "").slice(0, 2000),
+    postedAt: job.createdAt ? new Date(job.createdAt) : null,
+  }));
 }
 
-export async function scanRwaNewsSource(source: RadarSource): Promise<ScannedSignal[]> {
-  const sourceUrl = source.url || RWA_NEWS_URL;
-  const html = await fetchText(sourceUrl);
-  const lowerHtml = html.toLowerCase();
-  const newsStart = lowerHtml.indexOf("latest tokenization news");
-  const newsHtml = newsStart >= 0 ? html.slice(newsStart) : html;
-  const keywordText = source.keywords?.join(" ") || "RWA tokenization stablecoin custody";
-  const seen = new Set<string>();
-  const signals: ScannedSignal[] = [];
+async function parseBuiltinFeed(source: RadarSource): Promise<ParsedJob[]> {
+  const response = await fetch(source.url, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const html = await response.text();
+  const jsonLdMatches = html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi);
+  const jobs: ParsedJob[] = [];
 
-  for (const match of newsHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    const url = absoluteUrl(match[1], sourceUrl);
-    const host = hostLabel(url);
-    const headline = stripHtml(match[2]);
-    if (!url || !host || RWA_INTERNAL_HOSTS.has(host)) continue;
-    if (headline.length < 20 || isRwaNavigationHeadline(headline)) continue;
-    const dedupeKey = dedupe(url, headline, source.name);
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
+  type JsonLdJob = {
+    "@type"?: string;
+    title?: string;
+    hiringOrganization?: { name?: string };
+    jobLocation?: { address?: { addressLocality?: string; addressRegion?: string } };
+    url?: string;
+    description?: string;
+    datePosted?: string;
+  };
 
-    const summary = `Headline collected from RWA.xyz Tokenization News. Original source: ${host}.`;
-    const text = `${headline} ${summary} ${keywordText}`.toLowerCase();
-    const signal: ScannedSignal = {
-      source_id: source.id,
-      company: extractCompany(headline),
-      headline,
-      url,
-      source_name: source.name,
-      published_at: null,
-      signal_type: classify(text),
-      category: source.category,
-      summary,
-      raw_excerpt: summary,
-      relevance_score: score(text, null, source.category),
-      status: "new",
-      suggested_angle: suggestedAngle(text),
-      notes: null,
-      chatgpt_output: null,
-      dedupe_key: dedupeKey,
-    };
+  for (const match of jsonLdMatches) {
+    try {
+      const data = JSON.parse(match[1]) as JsonLdJob | JsonLdJob[];
+      const items = Array.isArray(data) ? data : [data];
+      for (const item of items) {
+        if (item["@type"] !== "JobPosting") continue;
+        const addr = item.jobLocation?.address;
+        jobs.push({
+          title: item.title ?? "Unknown role",
+          company: item.hiringOrganization?.name ?? "Unknown company",
+          location: [addr?.addressLocality, addr?.addressRegion].filter(Boolean).join(", ") || "NYC",
+          url: item.url ?? source.url,
+          description: stripHtml(item.description ?? "").slice(0, 2000),
+          postedAt: item.datePosted ? new Date(item.datePosted) : null,
+        });
+      }
+    } catch { continue; }
+  }
+  return jobs;
+}
 
-    if (isRelevant(signal)) signals.push(signal);
-    if (signals.length >= 25) break;
+function scoreJob(job: ParsedJob, keywords: string[]): number {
+  const text = `${job.title} ${job.company} ${job.description} ${job.location}`.toLowerCase();
+  if (ROLE_EXCLUDE_KEYWORDS.some((kw) => job.title.toLowerCase().includes(kw))) return 0;
+  let score = 0;
+  for (const kw of keywords) { if (text.includes(kw.toLowerCase())) score += 2; }
+  for (const kw of RELEVANCE_KEYWORDS) { if (text.includes(kw.toLowerCase())) score += 1; }
+  return Math.min(10, score);
+}
+
+function describeSignalType(job: ParsedJob): string {
+  const title = job.title.toLowerCase();
+  if (title.includes("chief of staff")) return "Chief of Staff";
+  if (title.includes("head of")) return "Head of Function";
+  if (title.includes("director")) return "Director";
+  if (title.includes("vp") || title.includes("vice president")) return "VP";
+  if (title.includes("strategy")) return "Strategy";
+  if (title.includes("operations")) return "Operations";
+  if (title.includes("partnership") || title.includes("business development")) return "BD / Partnerships";
+  if (title.includes("growth")) return "Growth";
+  return "Open Role";
+}
+
+function buildSuggestedAngle(job: ParsedJob): string {
+  const text = `${job.title} ${job.description}`.toLowerCase();
+  if (text.includes("rwa") || text.includes("tokenization") || text.includes("digital asset")) return "RWA / Digital Assets expertise";
+  if (text.includes("chief of staff") || text.includes("founder")) return "Chief of Staff / Founder Office track record";
+  if (text.includes("partnership") || text.includes("business development")) return "BD & Partnerships background";
+  if (text.includes("venture") || text.includes("startup")) return "Venture Builder / Startup Operator experience";
+  return "Strategy & Operations generalist";
+}
+
+export async function scanSource(source: RadarSource): Promise<{ created: number; error?: string }> {
+  const supabase = createServerSupabaseClient();
+  let jobs: ParsedJob[] = [];
+
+  try {
+    if (source.source_type === "rss" || source.source_type === "atom") {
+      jobs = await parseJobRssFeed(source);
+    } else if (source.source_type === "wellfound") {
+      jobs = await parseWellfoundFeed(source);
+    } else if (source.source_type === "builtin") {
+      jobs = await parseBuiltinFeed(source);
+    } else {
+      return { created: 0, error: `Source type '${source.source_type}' not implemented.` };
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    await supabase.from("radar_sources").update({ last_error: errorMessage, last_scanned_at: new Date().toISOString() }).eq("id", source.id);
+    return { created: 0, error: errorMessage };
   }
 
-  return signals;
-}
+  const keywords = Array.isArray(source.keywords) ? source.keywords : [];
+  const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
 
-export async function scanTacResearchSource(source: RadarSource): Promise<ScannedSignal[]> {
-  const sourceUrl = source.url || TAC_RESEARCH_URL;
-  const html = await fetchText(sourceUrl);
-  const lowerHtml = html.toLowerCase();
-  const researchStart = lowerHtml.indexOf("featured");
-  const researchHtml = researchStart >= 0 ? html.slice(researchStart) : html;
-  const keywordText = source.keywords?.join(" ") || "RWA tokenization stablecoin policy digital assets";
-  const seen = new Set<string>();
-  const signals: ScannedSignal[] = [];
+  const relevant = jobs.filter((job) => {
+    if (!job.url) return false;
+    if (job.postedAt && job.postedAt < cutoff) return false;
+    return scoreJob(job, keywords) > 0;
+  });
 
-  for (const match of researchHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    const rawHref = match[1];
-    const headline = stripHtml(match[2]);
-    if (isTacNavigationHeadline(headline, rawHref)) continue;
-    const url = absoluteUrl(rawHref, sourceUrl);
-    const host = hostLabel(url);
-    if (!url || !host) continue;
+  const { data: existingSignals } = await supabase
+    .from("radar_signals")
+    .select("url")
+    .in("url", relevant.map((j) => j.url).filter(Boolean));
 
-    const dedupeKey = dedupe(url, headline, source.name);
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
+  const existingUrls = new Set((existingSignals ?? []).map((s: { url: string }) => s.url));
+  const newJobs = relevant.filter((job) => !existingUrls.has(job.url));
 
-    const summary = `Item collected from the Tokenized Asset Coalition Research Hub. Original source: ${sourceOriginLabel(host)}.`;
-    const text = `${headline} ${summary} ${keywordText}`.toLowerCase();
-    const signal: ScannedSignal = {
-      source_id: source.id,
-      company: extractCompany(headline),
-      headline,
-      url,
-      source_name: source.name,
-      published_at: null,
-      signal_type: classify(text),
-      category: source.category,
-      summary,
-      raw_excerpt: summary,
-      relevance_score: score(text, null, source.category),
-      status: "new",
-      suggested_angle: suggestedAngle(text),
-      notes: null,
-      chatgpt_output: null,
-      dedupe_key: dedupeKey,
-    };
-
-    if (isRelevant(signal)) signals.push(signal);
-    if (signals.length >= 25) break;
+  if (!newJobs.length) {
+    await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null }).eq("id", source.id);
+    return { created: 0 };
   }
 
-  return signals;
+  const signals: RadarSignalInsert[] = newJobs.map((job) => ({
+    source_id: source.id,
+    source_name: source.name,
+    headline: job.title,
+    company: job.company,
+    url: job.url,
+    summary: job.description.slice(0, 500) || null,
+    published_at: job.postedAt?.toISOString() ?? null,
+    signal_type: describeSignalType(job),
+    category: source.category ?? "Job Posting",
+    relevance_score: scoreJob(job, keywords),
+    suggested_angle: buildSuggestedAngle(job),
+    status: "new",
+  }));
+
+  const { error: insertError } = await supabase.from("radar_signals").insert(signals);
+  if (insertError) return { created: 0, error: insertError.message };
+
+  await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null }).eq("id", source.id);
+  return { created: signals.length };
 }
 
-export async function scanSource(source: RadarSource): Promise<ScannedSignal[]> {
-  if (source.source_type === "rss") return scanRssSource(source);
-  if (source.source_type === "hackernews") return scanHackerNewsSource(source);
-  if (source.source_type === "rwa_news" || source.url.includes("app.rwa.xyz/news")) return scanRwaNewsSource(source);
-  if (source.source_type === "tac_research" || source.url.includes("tacoalition.org/research")) return scanTacResearchSource(source);
-  if (source.source_type === "manual") return [];
-  throw new Error(`${source.source_type} is a placeholder source type and is not implemented yet.`);
+export async function scanAllActiveSources(): Promise<{ created: number; scanned_sources: number; errors: string[] }> {
+  const supabase = createServerSupabaseClient();
+  const { data: sources, error } = await supabase.from("radar_sources").select("*").eq("is_active", true);
+  if (error || !sources) return { created: 0, scanned_sources: 0, errors: [error?.message ?? "Failed to load sources"] };
+
+  let totalCreated = 0;
+  const errors: string[] = [];
+
+  for (const source of sources as RadarSource[]) {
+    const result = await scanSource(source);
+    totalCreated += result.created;
+    if (result.error) errors.push(`${source.name}: ${result.error}`);
+  }
+
+  return { created: totalCreated, scanned_sources: sources.length, errors };
 }
