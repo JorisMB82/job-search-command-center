@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./radar-supabase";
+import { getServerSupabaseClient } from "./supabase";
 import type { RadarSource, RadarSignalInsert } from "./radar-types";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -220,7 +220,8 @@ function buildSuggestedAngle(job: ParsedJob): string {
 }
 
 export async function scanSource(source: RadarSource): Promise<{ created: number; error?: string }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = getServerSupabaseClient();
+if (!supabase) return { created: 0, error: "Supabase not configured." };
   let jobs: ParsedJob[] = [];
 
   try {
@@ -284,7 +285,8 @@ export async function scanSource(source: RadarSource): Promise<{ created: number
 }
 
 export async function scanAllActiveSources(): Promise<{ created: number; scanned_sources: number; errors: string[] }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = getServerSupabaseClient();
+if (!supabase) return { created: 0, error: "Supabase not configured." };
   const { data: sources, error } = await supabase.from("radar_sources").select("*").eq("is_active", true);
   if (error || !sources) return { created: 0, scanned_sources: 0, errors: [error?.message ?? "Failed to load sources"] };
 
