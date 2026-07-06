@@ -1,349 +1,344 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CopyIcon } from "./CopyIcon";
-import type { RadarSignal, RadarSource, StrategicAngle, TargetCompany } from "../lib/radar-types";
+import type { RadarSignal, RadarSource } from "../lib/radar-types";
+import { STARTER_JOB_SOURCES } from "../lib/radar-types";
 
-type Tab = "signals" | "targets" | "angles" | "sources";
-type SourceDraft = { name: string; url: string; source_type: string; category: string; keywords: string | string[]; is_active?: boolean };
+type Tab = "signals" | "sources";
 type ApiPayload<T> = { data?: T; error?: string; existing?: boolean };
 
-const starterSources: SourceDraft[] = [
-  { name: "TechCrunch Startups RSS", url: "https://techcrunch.com/category/startups/feed/", source_type: "rss", category: "General Startup News", keywords: ["funding", "launch", "startup", "fintech", "market", "growth"] },
-  { name: "TechCrunch Fintech RSS", url: "https://techcrunch.com/category/fintech/feed/", source_type: "rss", category: "Fintech", keywords: ["fintech", "payments", "banking", "infrastructure", "launch", "funding"] },
-  { name: "TechCrunch Venture RSS", url: "https://techcrunch.com/category/venture/feed/", source_type: "rss", category: "Venture / Funding", keywords: ["funding", "venture", "series", "capital", "raise", "growth"] },
-  { name: "Crunchbase News RSS", url: "https://news.crunchbase.com/feed/", source_type: "rss", category: "Venture / Funding", keywords: ["funding", "venture", "startup", "fintech", "raise", "acquisition"] },
-  { name: "Ledger Insights RSS", url: "https://www.ledgerinsights.com/feed/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "RWA", "stablecoin", "custody", "capital markets", "tokenized deposits"] },
-  { name: "CoinDesk RSS", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source_type: "rss", category: "Digital Assets / RWA", keywords: ["tokenization", "institutional", "custody", "stablecoin", "RWA", "payments"] },
-  { name: "RWA.xyz Tokenization News", url: "https://app.rwa.xyz/news", source_type: "rwa_news", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized", "stablecoin", "custody", "securities", "asset management", "private credit", "treasuries", "on-chain"], is_active: false },
-  { name: "Tokenized Asset Coalition Research Hub", url: "https://www.tacoalition.org/research", source_type: "tac_research", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "tokenized assets", "stablecoin", "policy", "regulation", "market infrastructure", "digital assets", "tokenized funds"], is_active: false },
-  { name: "The Digital Assets Edge RSS", url: "https://www.digitalassetsedge.com/rssfeed.php", source_type: "rss", category: "Digital Assets / RWA", keywords: ["digital assets", "tokenisation", "tokenization", "custody", "stablecoin", "collateral", "treasury", "market infrastructure", "securities finance", "regulation"], is_active: false },
-  { name: "Trade Finance Global RSS", url: "https://www.tradefinanceglobal.com/posts/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodity finance", "supply chain finance", "receivables", "stock finance"] },
-  { name: "Global Trade Review RSS", url: "https://www.gtreview.com/feed/", source_type: "rss", category: "Trade Finance", keywords: ["trade finance", "commodities", "banks", "export finance", "supply chain finance"] },
-  { name: "Blockworks RSS", url: "https://blockworks.co/feed", source_type: "rss", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "DeFi", "institutional", "asset management"], is_active: false },
-  { name: "Crowdfund Insider RSS", url: "https://www.crowdfundinsider.com/feed/", source_type: "rss", category: "Private Markets / Fintech", keywords: ["fintech", "crowdfunding", "private markets", "securities", "Reg CF", "digital assets"], is_active: false },
-  { name: "PYMNTS RSS", url: "https://www.pymnts.com/feed/", source_type: "rss", category: "Payments / Embedded Finance", keywords: ["payments", "B2B", "embedded finance", "working capital", "cross-border"], is_active: false },
-  { name: "Finextra Headlines RSS", url: "https://www.finextra.com/rss/headlines.aspx", source_type: "rss", category: "Fintech / Banking", keywords: ["fintech", "banking", "payments", "digital assets", "custody", "infrastructure"], is_active: false },
-  { name: "Hacker News Optional Search", url: "fintech startup funding", source_type: "hackernews", category: "Venture / Startup", keywords: ["fintech", "startup", "funding"], is_active: false },
-  { name: "HN — RWA / Tokenization", url: "RWA tokenization stablecoin custody institutional blockchain", source_type: "hackernews", category: "Digital Assets / RWA", keywords: ["RWA", "tokenization", "stablecoin", "custody", "institutional"], is_active: false },
-  { name: "HN — Trade Finance / Collateral", url: "trade finance warehouse receipt collateral supply chain finance", source_type: "hackernews", category: "Trade Finance", keywords: ["trade finance", "warehouse receipt", "collateral", "supply chain finance"], is_active: false },
-];
-
-const featuredSourcePresets = starterSources.filter((source) => ["RWA.xyz Tokenization News", "Tokenized Asset Coalition Research Hub", "The Digital Assets Edge RSS"].includes(source.name));
-
-function emptyAngle(): Partial<StrategicAngle> {
-  return { name: "", category: "", best_fit_company: "", trigger_signals: [], pain_hypothesis: "", credibility_points: "", short_pitch: "", longer_thesis: "", cta: "", relevant_resume_template: "", is_active: true, sort_order: 0 };
+function sourceTypeLabel(type: string) {
+  if (type === "rss" || type === "atom") return "RSS feed";
+  if (type === "wellfound") return "Wellfound API";
+  if (type === "builtin") return "Builtin NYC";
+  if (type === "manual") return "Manual only";
+  return type;
 }
 
-function sourcePayload(source: SourceDraft) {
-  return { ...source, keywords: typeof source.keywords === "string" ? source.keywords.split(",").map((item: string) => item.trim()).filter(Boolean) : source.keywords };
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Unknown date";
+  try { return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+  catch { return "Unknown date"; }
 }
 
-function sourceKeywordsValue(source: SourceDraft) {
-  return typeof source.keywords === "string" ? source.keywords : source.keywords.join(", ");
-}
-
-function sourceTypeLabel(sourceType: string) {
-  if (sourceType === "rss") return "RSS implemented";
-  if (sourceType === "hackernews") return "Hacker News optional";
-  if (sourceType === "rwa_news") return "RWA.xyz News implemented";
-  if (sourceType === "tac_research") return "TAC Research Hub implemented";
-  if (sourceType === "manual") return "Manual / no scan";
-  return "Placeholder / not implemented";
-}
-
-function promptTypeLabel(type: string) {
-  if (type === "company_research") return "Research prompt";
-  if (type === "unposted_role") return "Unposted role prompt";
-  if (type === "proposal_outreach") return "Proposal outreach prompt";
-  if (type === "contact_strategy") return "Contact strategy prompt";
-  if (type === "strategic_angle") return "Strategic angle prompt";
-  if (type === "source_discovery") return "Source discovery prompt";
-  return "Prompt";
+function scoreColor(score: number): string {
+  if (score >= 7) return "warning";
+  if (score >= 4) return "accent";
+  return "";
 }
 
 export function OpportunityRadarClient() {
   const [tab, setTab] = useState<Tab>("signals");
   const [signals, setSignals] = useState<RadarSignal[]>([]);
   const [sources, setSources] = useState<RadarSource[]>([]);
-  const [targets, setTargets] = useState<TargetCompany[]>([]);
-  const [angles, setAngles] = useState<StrategicAngle[]>([]);
   const [message, setMessage] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [newSource, setNewSource] = useState<SourceDraft>({ name: "", url: "", source_type: "rss", category: "", keywords: "" });
-  const [newAngle, setNewAngle] = useState<Partial<StrategicAngle>>(emptyAngle());
-  const [filter, setFilter] = useState("new");
+  const [statusFilter, setStatusFilter] = useState<string>("new");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [newSource, setNewSource] = useState({ name: "", url: "", source_type: "rss", category: "", keywords: "", is_active: false });
 
   async function loadAll() {
-    const [signalRes, sourceRes, targetRes, angleRes] = await Promise.all([
+    const [sigRes, srcRes] = await Promise.all([
       fetch("/api/radar/signals"),
       fetch("/api/radar/sources"),
-      fetch("/api/radar/targets"),
-      fetch("/api/radar/angles"),
     ]);
-    const signalPayload = await signalRes.json() as ApiPayload<RadarSignal[]>;
-    const sourcePayload = await sourceRes.json() as ApiPayload<RadarSource[]>;
-    const targetPayload = await targetRes.json() as ApiPayload<TargetCompany[]>;
-    const anglePayload = await angleRes.json() as ApiPayload<StrategicAngle[]>;
-    if (signalPayload.error || sourcePayload.error || targetPayload.error || anglePayload.error) setMessage(signalPayload.error || sourcePayload.error || targetPayload.error || anglePayload.error || "Radar data load failed.");
-    setSignals(signalPayload.data ?? []);
-    setSources(sourcePayload.data ?? []);
-    setTargets(targetPayload.data ?? []);
-    setAngles(anglePayload.data ?? []);
+    const sigPayload = (await sigRes.json()) as ApiPayload<RadarSignal[]>;
+    const srcPayload = (await srcRes.json()) as ApiPayload<RadarSource[]>;
+    if (sigPayload.error || srcPayload.error) setMessage(sigPayload.error ?? srcPayload.error ?? "Load failed.");
+    setSignals(sigPayload.data ?? []);
+    setSources(srcPayload.data ?? []);
   }
 
   useEffect(() => { void loadAll(); }, []);
 
   const metrics = useMemo(() => ({
     newSignals: signals.filter((s) => s.status === "new").length,
-    savedTargets: targets.length,
-    highSignals: signals.filter((s) => s.relevance_score >= 7 && s.status !== "dismissed").length,
-    outreachActive: targets.filter((t) => !["not_contacted", "archived", "converted"].includes(t.outreach_status)).length,
-    converted: signals.filter((s) => s.status === "converted").length + targets.filter((t) => t.target_status === "converted").length,
-    activeSources: sources.filter((source) => source.is_active).length,
-  }), [signals, targets, sources]);
+    highRelevance: signals.filter((s) => s.relevance_score >= 7 && s.status !== "dismissed").length,
+    saved: signals.filter((s) => s.status === "saved").length,
+    converted: signals.filter((s) => s.status === "converted").length,
+    activeSources: sources.filter((s) => s.is_active).length,
+  }), [signals, sources]);
 
-  const shownSignals = signals.filter((signal) => {
-    if (filter !== "all" && signal.status !== filter) return false;
-    const text = `${signal.company ?? ""} ${signal.headline} ${signal.summary ?? ""} ${signal.suggested_angle ?? ""}`.toLowerCase();
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(signals.map((s) => s.category).filter(Boolean)));
+    return cats.sort();
+  }, [signals]);
+
+  const shownSignals = useMemo(() => signals.filter((s) => {
+    if (statusFilter !== "all" && s.status !== statusFilter) return false;
+    if (categoryFilter !== "all" && s.category !== categoryFilter) return false;
+    const text = `${s.company ?? ""} ${s.headline} ${s.summary ?? ""} ${s.signal_type}`.toLowerCase();
     return text.includes(search.toLowerCase());
-  });
-
-  function applySourcePreset(source: SourceDraft) {
-    setNewSource({ ...source, keywords: sourceKeywordsValue(source) });
-    setMessage(`${source.name} filled into Advanced add source. Review it, click Add source, then test it while inactive.`);
-  }
-
-  function updateNewSourceType(source_type: string) {
-    const preset = featuredSourcePresets.find((source) => source.source_type === source_type);
-    if (preset && !newSource.name && !newSource.url) {
-      applySourcePreset(preset);
-      return;
-    }
-    setNewSource({ ...newSource, source_type });
-  }
+  }), [signals, statusFilter, categoryFilter, search]);
 
   async function patchSignal(id: string, update: Partial<RadarSignal>) {
-    const response = await fetch("/api/radar/signals", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...update }) });
-    const payload = await response.json() as ApiPayload<RadarSignal>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Signal update failed.");
-    else setSignals((current) => current.map((item) => item.id === id ? payload.data as RadarSignal : item));
-  }
-
-  async function patchSource(id: string, update: Partial<RadarSource>) {
-    const response = await fetch("/api/radar/sources", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...update }) });
-    const payload = await response.json() as ApiPayload<RadarSource>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Source update failed.");
-    else setSources((current) => current.map((item) => item.id === id ? payload.data as RadarSource : item));
-  }
-
-  async function deleteSource(id: string) {
-    const shouldDelete = window.confirm("Delete this Radar source? Existing signals from it stay in the Signal Inbox, but the source will no longer be scanned.");
-    if (!shouldDelete) return;
-    const response = await fetch("/api/radar/sources", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    const payload = await response.json() as ApiPayload<unknown>;
-    if (payload.error) setMessage(payload.error);
-    else { setSources((current) => current.filter((source) => source.id !== id)); setMessage("Source deleted."); }
-  }
-
-  async function createTarget(signal: RadarSignal, status = "watching") {
-    const response = await fetch("/api/radar/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: signal.company || signal.headline, sector: signal.category, target_status: status, best_signal_id: signal.id, why_interesting: signal.headline, pain_hypothesis: signal.summary, proposal_angle: signal.suggested_angle, notes: signal.url }) });
-    const payload = await response.json() as ApiPayload<TargetCompany>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Target creation failed.");
-    else { setTargets((current) => [payload.data as TargetCompany, ...current]); await patchSignal(signal.id, { status: status === "watching" ? "watching" : "saved" }); }
-  }
-
-  async function buildPrompt(type: string, signal?: RadarSignal, target?: TargetCompany, angle?: StrategicAngle) {
-    const response = await fetch("/api/radar/prompts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, signal, target, angle }) });
-    const payload = await response.json() as ApiPayload<{ prompt: string }>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Prompt generation failed.");
-    else { setPrompt(payload.data.prompt); await navigator.clipboard?.writeText(payload.data.prompt).catch(() => undefined); setMessage(`${promptTypeLabel(type)} copied. Paste it into ChatGPT Plus manually, then paste useful output into the relevant notes.`); }
+    const res = await fetch("/api/radar/signals", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...update }),
+    });
+    const payload = (await res.json()) as ApiPayload<RadarSignal>;
+    if (payload.error || !payload.data) { setMessage(payload.error ?? "Signal update failed."); return; }
+    setSignals((cur) => cur.map((s) => s.id === id ? payload.data as RadarSignal : s));
   }
 
   async function convertSignal(signal: RadarSignal) {
-    const response = await fetch("/api/radar/convert-to-opportunity", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signal_id: signal.id }) });
-    const payload = await response.json() as ApiPayload<unknown>;
-    if (payload.error) setMessage(payload.error);
-    else { setMessage("Converted to opportunity."); await loadAll(); }
+    const res = await fetch("/api/radar/convert-to-opportunity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signal_id: signal.id }),
+    });
+    const payload = (await res.json()) as ApiPayload<unknown>;
+    if (payload.error) { setMessage(payload.error); return; }
+    setMessage(`Converted "${signal.headline}" to an opportunity. Find it on the dashboard.`);
+    await loadAll();
   }
 
   async function scan(sourceId?: string) {
-    setMessage("Scanning sources...");
-    const response = await fetch("/api/radar/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: sourceId }) });
-    const payload = await response.json() as ApiPayload<{ created: number; scanned_sources: number; errors: string[] }>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Scan failed.");
-    else setMessage(`Scan complete. New signals: ${payload.data.created}. Sources scanned: ${payload.data.scanned_sources}.`);
-    await loadAll();
-  }
-
-  async function createSource(source: SourceDraft = newSource) {
-    const normalized = sourcePayload(source);
-    if (!normalized.name || !normalized.url) { setMessage("Source name and URL are required."); return; }
-    if (sources.some((item) => item.url === normalized.url)) { setMessage("Source already exists; skipped duplicate."); return; }
-    const response = await fetch("/api/radar/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(normalized) });
-    const payload = await response.json() as ApiPayload<RadarSource>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Source creation failed.");
+    setScanning(true);
+    setMessage("Scanning…");
+    const res = await fetch("/api/radar/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+    const payload = (await res.json()) as ApiPayload<{ created: number; scanned_sources: number; errors: string[] }>;
+    if (payload.error || !payload.data) { setMessage(payload.error ?? "Scan failed."); }
     else {
-      setSources((current) => current.some((item) => item.id === payload.data?.id) ? current : [payload.data as RadarSource, ...current]);
-      setNewSource({ name: "", url: "", source_type: "rss", category: "", keywords: "" });
-      setMessage(payload.existing ? "Source already existed; reused existing source." : "Source added. Keep it inactive first, then use Test this source only.");
+      const { created, scanned_sources, errors } = payload.data;
+      setMessage(`Scan complete. ${created} new job${created !== 1 ? "s" : ""} found across ${scanned_sources} source${scanned_sources !== 1 ? "s" : ""}${errors.length ? ` (${errors.length} error${errors.length > 1 ? "s" : ""})` : ""}.`);
     }
+    setScanning(false);
+    await loadAll();
   }
 
-  async function seedSources() {
+  async function addSource() {
+    if (!newSource.name || !newSource.url) { setMessage("Name and URL are required."); return; }
+    if (sources.some((s) => s.url === newSource.url)) { setMessage("Source already exists."); return; }
+    const keywords = newSource.keywords.split(",").map((k) => k.trim()).filter(Boolean);
+    const res = await fetch("/api/radar/sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...newSource, keywords }),
+    });
+    const payload = (await res.json()) as ApiPayload<RadarSource>;
+    if (payload.error || !payload.data) { setMessage(payload.error ?? "Could not add source."); return; }
+    setSources((cur) => [payload.data as RadarSource, ...cur]);
+    setNewSource({ name: "", url: "", source_type: "rss", category: "", keywords: "", is_active: false });
+    setMessage("Source added. Keep it inactive, test it, then activate if useful.");
+  }
+
+  async function seedStarterSources() {
     let added = 0;
-    for (const source of starterSources) {
-      if (!sources.some((item) => item.url === source.url)) { await createSource(source); added += 1; }
+    for (const source of STARTER_JOB_SOURCES) {
+      if (sources.some((s) => s.url === source.url)) continue;
+      const res = await fetch("/api/radar/sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(source),
+      });
+      const payload = (await res.json()) as ApiPayload<RadarSource>;
+      if (payload.data) { setSources((cur) => [payload.data as RadarSource, ...cur]); added++; }
     }
     await loadAll();
-    setMessage(added > 0 ? `Added ${added} missing starter source${added === 1 ? "" : "s"}.` : "All starter sources already exist.");
+    setMessage(added > 0 ? `Added ${added} starter source${added !== 1 ? "s" : ""}.` : "All starter sources already exist.");
   }
 
-  async function seedAngles() {
-    if (angles.length > 0) { setMessage("Default angles already exist; skipped duplicate seeding."); return; }
-    const response = await fetch("/api/radar/angles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seed_defaults: true }) });
-    const payload = await response.json() as ApiPayload<StrategicAngle[]>;
-    if (payload.error) setMessage(payload.error);
-    else await loadAll();
+  async function patchSource(id: string, update: Partial<RadarSource>) {
+    const res = await fetch("/api/radar/sources", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...update }),
+    });
+    const payload = (await res.json()) as ApiPayload<RadarSource>;
+    if (payload.error || !payload.data) { setMessage(payload.error ?? "Source update failed."); return; }
+    setSources((cur) => cur.map((s) => s.id === id ? payload.data as RadarSource : s));
   }
 
-  async function saveAngle(angle: Partial<StrategicAngle>) {
-    const response = await fetch("/api/radar/angles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(angle) });
-    const payload = await response.json() as ApiPayload<StrategicAngle>;
-    if (payload.error || !payload.data) setMessage(payload.error || "Angle creation failed.");
-    else { setAngles((current) => [...current, payload.data as StrategicAngle]); setNewAngle(emptyAngle()); }
+  async function deleteSource(id: string) {
+    if (!window.confirm("Delete this source? Existing signals stay, but the source won't be scanned again.")) return;
+    const res = await fetch("/api/radar/sources", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const payload = (await res.json()) as ApiPayload<unknown>;
+    if (payload.error) { setMessage(payload.error); return; }
+    setSources((cur) => cur.filter((s) => s.id !== id));
+    setMessage("Source deleted.");
   }
 
-  return <div className="stack">
-    <section className="card stack">
-      <h1>Opportunity Radar</h1>
-      <p className="muted">Signal-led sourcing for untapped roles, advisory conversations, and companies to watch. Manual ChatGPT prompts only; no automated outreach.</p>
-      {message ? <p className={message.toLowerCase().includes("error") || message.toLowerCase().includes("failed") || message.toLowerCase().includes("not available") ? "error" : "muted"}>{message}</p> : null}
-      <div className="row">
-        {angles.length === 0 ? <button className="secondary" onClick={() => void seedAngles()}>Seed default angles</button> : null}
-        {sources.length === 0 ? <button className="secondary" onClick={() => void seedSources()}>Create starter sources</button> : <button className="secondary" onClick={() => void scan()}>Refresh all active sources</button>}
-        <span className="muted">Active sources: {metrics.activeSources}</span>
+  async function dismissAll() {
+    const toDismiss = shownSignals.filter((s) => s.status === "new" && s.relevance_score < 4);
+    if (!toDismiss.length) { setMessage("No low-relevance new signals to dismiss."); return; }
+    if (!window.confirm(`Dismiss ${toDismiss.length} low-relevance signal${toDismiss.length > 1 ? "s" : ""}?`)) return;
+    await Promise.all(toDismiss.map((s) => patchSignal(s.id, { status: "dismissed" })));
+    setMessage(`Dismissed ${toDismiss.length} signals.`);
+  }
+
+  return (
+    <div className="stack">
+      <section className="card stack">
+        <div className="row">
+          <h1>Job Scanner</h1>
+          {metrics.activeSources > 0
+            ? <button disabled={scanning} onClick={() => void scan()}>{scanning ? "Scanning…" : `Scan ${metrics.activeSources} active source${metrics.activeSources !== 1 ? "s" : ""}`}</button>
+            : <button className="secondary" onClick={() => void seedStarterSources()}>Set up starter sources</button>}
+        </div>
+        <p className="muted">Scans job board feeds for relevant openings. Review, save, and convert matches into tracked opportunities.</p>
+        {message ? <p className={message.toLowerCase().includes("error") || message.toLowerCase().includes("failed") ? "error" : "muted"}>{message}</p> : null}
+      </section>
+
+      <section className="metric-grid">
+        <div className="metric-card"><span>New jobs</span><strong>{metrics.newSignals}</strong></div>
+        <div className="metric-card"><span>High relevance</span><strong>{metrics.highRelevance}</strong></div>
+        <div className="metric-card"><span>Saved</span><strong>{metrics.saved}</strong></div>
+        <div className="metric-card"><span>Converted</span><strong>{metrics.converted}</strong></div>
+        <div className="metric-card"><span>Active sources</span><strong>{metrics.activeSources}</strong></div>
+      </section>
+
+      <div className="radar-tabs">
+        <button className={tab === "signals" ? "" : "secondary"} onClick={() => setTab("signals")}>Job Inbox</button>
+        <button className={tab === "sources" ? "" : "secondary"} onClick={() => setTab("sources")}>Sources / Scanner</button>
       </div>
-    </section>
 
-    <section className="metric-grid">
-      <div className="metric-card"><span>New signals</span><strong>{metrics.newSignals}</strong></div>
-      <div className="metric-card"><span>Saved targets</span><strong>{metrics.savedTargets}</strong></div>
-      <div className="metric-card"><span>High relevance</span><strong>{metrics.highSignals}</strong></div>
-      <div className="metric-card"><span>Outreach active</span><strong>{metrics.outreachActive}</strong></div>
-      <div className="metric-card"><span>Converted</span><strong>{metrics.converted}</strong></div>
-    </section>
-
-    <div className="radar-tabs">
-      {(["signals", "targets", "angles", "sources"] as Tab[]).map((item) => <button key={item} className={tab === item ? "" : "secondary"} onClick={() => setTab(item)}>{item === "signals" ? "Signal Inbox" : item === "targets" ? "Saved Targets" : item === "angles" ? "Angle Library" : "Sources / Scanner"}</button>)}
-    </div>
-
-    {tab === "signals" ? <section className="card stack">
-      <div className="row"><h2>Signal Inbox</h2><button onClick={() => void scan()}>Refresh all active sources</button></div>
-      <p className="muted">Review signals quickly. Save only companies worth monitoring, researching, or converting into a real opportunity.</p>
-      <div className="filter-grid">
-        <label>Status<select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="new">New</option><option value="saved">Saved</option><option value="watching">Watching</option><option value="dismissed">Dismissed</option><option value="converted">Converted</option><option value="all">All</option></select></label>
-        <label>Search<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company, headline, angle..." /></label>
-      </div>
-      <div className="radar-scroll">
-        {shownSignals.length === 0 ? <p className="muted">No matching signals yet. Go to Sources / Scanner, create or activate sources, then refresh active sources.</p> : shownSignals.map((signal) => <article className="card radar-card" key={signal.id}>
-          <div className="row"><strong>{signal.company || "Unknown company"}</strong><span className="badge">{signal.signal_type}</span><span className="badge warning">Score {signal.relevance_score}</span></div>
-          <h3>{signal.headline}</h3>
-          <p className="muted">{signal.source_name} · {signal.published_at ? new Date(signal.published_at).toLocaleDateString() : "Unknown date"}</p>
-          <p>{signal.summary}</p>
-          <p className="muted">Suggested angle: {signal.suggested_angle || "None"}</p>
-          {signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">Open source</a> : null}
-          <label>Company<input value={signal.company ?? ""} onChange={(e) => void patchSignal(signal.id, { company: e.target.value })} /></label>
+      {tab === "signals" && (
+        <section className="card stack">
           <div className="row">
-            <button className="secondary" onClick={() => void createTarget(signal, "research")}>Save target</button>
-            <button className="secondary" onClick={() => void createTarget(signal, "watching")}>Watch</button>
-            <button className="secondary" onClick={() => void patchSignal(signal.id, { status: "dismissed" })}>Dismiss</button>
-            <button className="secondary" onClick={() => void buildPrompt("company_research", signal)}><CopyIcon />Research prompt</button>
-            <button className="secondary" onClick={() => void buildPrompt("unposted_role", signal)}><CopyIcon />Unposted role</button>
-            <button className="secondary" onClick={() => void buildPrompt("proposal_outreach", signal)}><CopyIcon />Proposal outreach</button>
-            <button onClick={() => void convertSignal(signal)}>Convert</button>
+            <h2>Job Inbox</h2>
+            <button className="secondary" onClick={dismissAll}>Dismiss low-relevance</button>
           </div>
-        </article>)}
-      </div>
-    </section> : null}
-
-    {tab === "targets" ? <section className="card stack">
-      <h2>Saved Targets</h2>
-      <p className="muted">Targets are companies worth watching or approaching. This is intentionally lighter than a CRM.</p>
-      <div className="radar-scroll">
-        {targets.length === 0 ? <p className="muted">No saved targets yet. Save or watch a signal from the Signal Inbox to create your first target company.</p> : targets.map((target) => <article className="card radar-card" key={target.id}>
-          <div className="row"><strong>{target.company}</strong><span className="badge">{target.target_status}</span><span className="badge accent">{target.outreach_status}</span></div>
-          <p>{target.why_interesting}</p>
-          <p className="muted">{target.proposal_angle || target.pain_hypothesis}</p>
-          <div className="row"><Link href={`/radar/targets/${target.id}`}>Open detail</Link><button className="secondary" onClick={() => void buildPrompt("proposal_outreach", undefined, target)}><CopyIcon />Build outreach</button><button className="secondary" onClick={() => void buildPrompt("unposted_role", undefined, target)}><CopyIcon />Build role</button></div>
-        </article>)}
-      </div>
-    </section> : null}
-
-    {tab === "angles" ? <section className="card stack">
-      <div className="row"><h2>Angle Library</h2>{angles.length === 0 ? <button onClick={() => void seedAngles()}>Seed default angles</button> : null}</div>
-      <p className="muted">Angles are reusable value propositions you can apply to a target company. Keep the list short and practical.</p>
-      <article className="mini-card stack">
-        <label>Name<input value={newAngle.name ?? ""} onChange={(e) => setNewAngle({ ...newAngle, name: e.target.value })} /></label>
-        <label>Pain hypothesis<textarea value={newAngle.pain_hypothesis ?? ""} onChange={(e) => setNewAngle({ ...newAngle, pain_hypothesis: e.target.value })} /></label>
-        <label>Short pitch<textarea value={newAngle.short_pitch ?? ""} onChange={(e) => setNewAngle({ ...newAngle, short_pitch: e.target.value })} /></label>
-        <button onClick={() => void saveAngle(newAngle)}>Add angle</button>
-      </article>
-      {angles.length === 0 ? <p className="muted">No strategic angles yet. Seed defaults first, then edit or add your own over time.</p> : angles.map((angle) => <article className="mini-card stack" key={angle.id}>
-        <div className="row"><strong>{angle.name}</strong><span className="badge">{angle.category || "Angle"}</span></div>
-        <p>{angle.short_pitch}</p>
-        <p className="muted">{angle.pain_hypothesis}</p>
-        <button className="secondary" onClick={() => void buildPrompt("strategic_angle", undefined, undefined, angle)}><CopyIcon />Copy strategic angle prompt</button>
-      </article>)}
-    </section> : null}
-
-    {tab === "sources" ? <section className="card stack">
-      <div className="row">
-        <h2>Sources / Scanner</h2>
-        <button className="secondary" onClick={() => void seedSources()}>{sources.length === 0 ? "Create starter sources" : "Add missing starter sources"}</button>
-        {sources.length > 0 ? <button onClick={() => void scan()}>Refresh active sources</button> : null}
-      </div>
-      <p className="muted">Use presets first. Keep new sources inactive, test them once, then activate only the useful ones.</p>
-      <article className="mini-card stack">
-        <div className="row">
-          <strong>Recommended sources</strong>
-          {featuredSourcePresets.map((source) => <button key={source.name} className="secondary" onClick={() => applySourcePreset(source)}>Add {source.name}</button>)}
-        </div>
-        <details>
-          <summary>Advanced: add custom source or copy source-discovery prompt</summary>
-          <div className="stack" style={{ marginTop: "12px" }}>
-            <p className="muted">The Type dropdown only tells the scanner how to read the URL. It does not create a source by itself. Fill Name + URL + Keywords, then click Add source.</p>
-            <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
-            <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
-            <label>Type<select value={newSource.source_type} onChange={(e) => updateNewSourceType(e.target.value)}><option value="rss">RSS implemented</option><option value="hackernews">Hacker News optional</option><option value="rwa_news">RWA.xyz News implemented</option><option value="tac_research">TAC Research Hub implemented</option><option value="manual">Manual / no scan</option><option value="github_search">GitHub Search placeholder</option><option value="sec_edgar">SEC EDGAR placeholder</option></select></label>
-            <label>Keywords<input value={typeof newSource.keywords === "string" ? newSource.keywords : newSource.keywords.join(", ")} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="comma separated" /></label>
-            <div className="row"><button onClick={() => void createSource()}>Add source</button><button className="secondary" onClick={() => void buildPrompt("source_discovery")}><CopyIcon />Copy source discovery prompt</button></div>
+          <p className="muted">Jobs found by the scanner. Save interesting ones, dismiss noise, convert strong matches into tracked opportunities.</p>
+          <div className="filter-grid">
+            <label>Status
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="new">New</option>
+                <option value="saved">Saved</option>
+                <option value="dismissed">Dismissed</option>
+                <option value="converted">Converted</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+            <label>Category
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                <option value="all">All categories</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label>Search
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Role, company, keyword…" />
+            </label>
           </div>
-        </details>
-      </article>
-      {sources.length === 0 ? <p className="muted">No sources yet. Create starter sources or add one RSS feed manually.</p> : sources.map((source) => <article className="mini-card stack" key={source.id}>
-        <div className="row"><strong>{source.name}</strong><span className="badge">{sourceTypeLabel(source.source_type)}</span><span className={source.is_active ? "badge accent" : "badge warning"}>{source.is_active ? "Active" : "Inactive"}</span></div>
-        <p className="muted">{source.url}</p>
-        {source.keywords?.length ? <p className="muted">Keywords: {source.keywords.join(", ")}</p> : null}
-        <p className="muted">Last scan: {source.last_scanned_at ? new Date(source.last_scanned_at).toLocaleString() : "Never"}</p>
-        {source.last_error ? <p className="error">Last error: {source.last_error}</p> : null}
-        <div className="row">
-          <button className="secondary" onClick={() => void scan(source.id)}>Test this source only</button>
-          <button className="secondary" onClick={() => void patchSource(source.id, { is_active: !source.is_active })}>{source.is_active ? "Deactivate" : "Activate"}</button>
+          <p className="muted">Showing {shownSignals.length} of {signals.length} signals.</p>
+          <div className="radar-scroll">
+            {shownSignals.length === 0 ? (
+              <p className="muted">{signals.length === 0 ? "No jobs yet. Go to Sources / Scanner, add sources, and run a scan." : "No signals match these filters."}</p>
+            ) : shownSignals.map((signal) => (
+              <article className="card radar-card" key={signal.id}>
+                <div className="row card-title-row">
+                  <strong>{signal.headline}</strong>
+                  <span className="badge">{signal.signal_type}</span>
+                  <span className={`badge ${scoreColor(signal.relevance_score)}`}>Score {signal.relevance_score}/10</span>
+                </div>
+                <p>{signal.company ?? "Unknown company"}{signal.category ? ` · ${signal.category}` : ""}</p>
+                <p className="muted">Posted: {formatDate(signal.published_at)} · via {signal.source_name}</p>
+                {signal.summary ? <p className="muted">{signal.summary.slice(0, 280)}{signal.summary.length > 280 ? "…" : ""}</p> : null}
+                {signal.suggested_angle ? <p className="muted">Angle: {signal.suggested_angle}</p> : null}
+                <div className="row">
+                  {signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">Open posting ↗</a> : null}
+                  {signal.status === "new" && <button className="secondary" onClick={() => void patchSignal(signal.id, { status: "saved" })}>Save</button>}
+                  {signal.status === "new" && <button className="secondary" onClick={() => void patchSignal(signal.id, { status: "dismissed" })}>Dismiss</button>}
+                  {signal.status === "saved" && <button className="secondary" onClick={() => void patchSignal(signal.id, { status: "new" })}>Unsave</button>}
+                  {(signal.status === "new" || signal.status === "saved") && (
+                    <button onClick={() => void convertSignal(signal)}>→ Add to pipeline</button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tab === "sources" && (
+        <section className="card stack">
+          <div className="row">
+            <h2>Sources / Scanner</h2>
+            <button className="secondary" onClick={() => void seedStarterSources()}>
+              {sources.length === 0 ? "Set up starter sources" : "Add missing starters"}
+            </button>
+            {sources.some((s) => s.is_active) && (
+              <button disabled={scanning} onClick={() => void scan()}>{scanning ? "Scanning…" : "Scan all active"}</button>
+            )}
+          </div>
+          <p className="muted">Add job board feeds. Keep new sources inactive, test them once, then activate only the useful ones.</p>
+          <article className="mini-card stack">
+            <strong>Recommended sources</strong>
+            <p className="muted">One click to add. All start inactive so you can test before activating.</p>
+            <div className="row" style={{ flexWrap: "wrap", gap: "8px" }}>
+              {STARTER_JOB_SOURCES.map((s) => {
+                const exists = sources.some((src) => src.url === s.url);
+                return (
+                  <button
+                    key={s.name}
+                    className="secondary"
+                    disabled={exists}
+                    onClick={async () => {
+                      if (exists) return;
+                      const res = await fetch("/api/radar/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
+                      const payload = (await res.json()) as ApiPayload<RadarSource>;
+                      if (payload.data) setSources((cur) => [payload.data as RadarSource, ...cur]);
+                      setMessage(exists ? "Already added." : `${s.name} added.`);
+                    }}
+                  >
+                    {exists ? "✓ " : "+ "}{s.name}
+                  </button>
+                );
+              })}
+            </div>
+          </article>
           <details>
-            <summary>More</summary>
-            <div className="row" style={{ marginTop: "10px" }}><button className="secondary-danger" onClick={() => void deleteSource(source.id)}>Delete source</button></div>
+            <summary>Add custom source</summary>
+            <div className="stack" style={{ marginTop: "12px" }}>
+              <label>Name<input value={newSource.name} onChange={(e) => setNewSource({ ...newSource, name: e.target.value })} /></label>
+              <label>URL / search query<input value={newSource.url} onChange={(e) => setNewSource({ ...newSource, url: e.target.value })} /></label>
+              <label>Type
+                <select value={newSource.source_type} onChange={(e) => setNewSource({ ...newSource, source_type: e.target.value })}>
+                  <option value="rss">RSS / Atom feed</option>
+                  <option value="wellfound">Wellfound API</option>
+                  <option value="builtin">Builtin NYC</option>
+                  <option value="manual">Manual only</option>
+                </select>
+              </label>
+              <label>Category<input value={newSource.category} onChange={(e) => setNewSource({ ...newSource, category: e.target.value })} /></label>
+              <label>Keywords<input value={newSource.keywords} onChange={(e) => setNewSource({ ...newSource, keywords: e.target.value })} placeholder="strategy, operations, chief of staff" /></label>
+              <button onClick={() => void addSource()}>Add source</button>
+            </div>
           </details>
-        </div>
-      </article>)}
-    </section> : null}
-
-    {prompt ? <section className="card stack">
-      <div className="row"><h2>Generated prompt</h2><button className="secondary" onClick={() => navigator.clipboard.writeText(prompt)}><CopyIcon />Copy again</button></div>
-      <p className="muted">Paste this into ChatGPT Plus manually, then paste useful output back into the relevant target notes.</p>
-      <pre>{prompt}</pre>
-    </section> : null}
-  </div>;
+          {sources.length === 0 ? (
+            <p className="muted">No sources yet. Add the starter sources above.</p>
+          ) : sources.map((source) => (
+            <article className="mini-card stack" key={source.id}>
+              <div className="row">
+                <strong>{source.name}</strong>
+                <span className="badge">{sourceTypeLabel(source.source_type)}</span>
+                <span className={source.is_active ? "badge accent" : "badge warning"}>{source.is_active ? "Active" : "Inactive"}</span>
+              </div>
+              <p className="muted">{source.url}</p>
+              {source.keywords?.length ? <p className="muted">Keywords: {source.keywords.join(", ")}</p> : null}
+              <p className="muted">Last scan: {source.last_scanned_at ? new Date(source.last_scanned_at).toLocaleString() : "Never"}</p>
+              {source.last_error ? <p className="error">Last error: {source.last_error}</p> : null}
+              <div className="row">
+                <button className="secondary" disabled={scanning} onClick={() => void scan(source.id)}>Test this source</button>
+                <button className="secondary" onClick={() => void patchSource(source.id, { is_active: !source.is_active })}>
+                  {source.is_active ? "Deactivate" : "Activate"}
+                </button>
+                <button className="secondary" onClick={() => void deleteSource(source.id)}>Delete</button>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+    </div>
+  );
 }
