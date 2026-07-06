@@ -87,25 +87,21 @@ async function parseJobRssFeed(source: RadarSource): Promise<ParsedJob[]> {
   const xml = await response.text();
   const items = extractAllTags(xml, "item");
   const jobs: ParsedJob[] = [];
-
   for (const item of items) {
     const title = stripHtml(extractTag(item, "title"));
     const link = extractTag(item, "link") || extractTag(item, "guid");
     const description = stripHtml(extractTag(item, "description") || extractTag(item, "content:encoded") || "");
     const pubDate = parseRssDate(extractTag(item, "pubDate") || extractTag(item, "dc:date"));
-
     let company = extractTag(item, "company") || extractTag(item, "author") || "";
     if (!company) {
       const atMatch = /\bat\s+([^[\]()\n]+?)(?:\s*[-|·]|$)/i.exec(title);
       if (atMatch) company = atMatch[1].trim();
     }
-
     const location = stripHtml(
       extractTag(item, "location") ||
       extractTag(item, "job:location") ||
       extractTag(item, "georss:featureName") || ""
     ) || parseLocationFromText(title + " " + description);
-
     jobs.push({
       title: title || "Unknown role",
       company: company || "Unknown company",
@@ -126,7 +122,6 @@ async function parseWellfoundFeed(source: RadarSource): Promise<ParsedJob[]> {
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Wellfound API HTTP ${response.status}`);
-
   type WellfoundJob = {
     title?: string;
     startup?: { name?: string };
@@ -156,7 +151,6 @@ async function parseBuiltinFeed(source: RadarSource): Promise<ParsedJob[]> {
   const html = await response.text();
   const jsonLdMatches = html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi);
   const jobs: ParsedJob[] = [];
-
   type JsonLdJob = {
     "@type"?: string;
     title?: string;
@@ -166,7 +160,6 @@ async function parseBuiltinFeed(source: RadarSource): Promise<ParsedJob[]> {
     description?: string;
     datePosted?: string;
   };
-
   for (const match of jsonLdMatches) {
     try {
       const data = JSON.parse(match[1]) as JsonLdJob | JsonLdJob[];
@@ -221,9 +214,8 @@ function buildSuggestedAngle(job: ParsedJob): string {
 
 export async function scanSource(source: RadarSource): Promise<{ created: number; error?: string }> {
   const supabase = getServerSupabaseClient();
-if (!supabase) return { created: 0, error: "Supabase not configured." };
+  if (!supabase) return { created: 0, error: "Supabase not configured." };
   let jobs: ParsedJob[] = [];
-
   try {
     if (source.source_type === "rss" || source.source_type === "atom") {
       jobs = await parseJobRssFeed(source);
@@ -236,32 +228,26 @@ if (!supabase) return { created: 0, error: "Supabase not configured." };
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    await supabase.from("radar_sources").update({ last_error: errorMessage, last_scanned_at: new Date().toISOString() }).eq("id", source.id);
+    await supabase.from("radar_sources").update({ last_error: errorMessage, last_scanned_at: new Date().toISOString() } as any).eq("id", source.id);
     return { created: 0, error: errorMessage };
   }
-
   const keywords = Array.isArray(source.keywords) ? source.keywords : [];
   const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
-
   const relevant = jobs.filter((job) => {
     if (!job.url) return false;
     if (job.postedAt && job.postedAt < cutoff) return false;
     return scoreJob(job, keywords) > 0;
   });
-
   const { data: existingSignals } = await supabase
     .from("radar_signals")
     .select("url")
     .in("url", relevant.map((j) => j.url).filter(Boolean));
-
   const existingUrls = new Set((existingSignals ?? []).map((s: { url: string }) => s.url));
   const newJobs = relevant.filter((job) => !existingUrls.has(job.url));
-
   if (!newJobs.length) {
-    await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null }).eq("id", source.id);
+    await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null } as any).eq("id", source.id);
     return { created: 0 };
   }
-
   const signals: RadarSignalInsert[] = newJobs.map((job) => ({
     source_id: source.id,
     source_name: source.name,
@@ -276,28 +262,23 @@ if (!supabase) return { created: 0, error: "Supabase not configured." };
     suggested_angle: buildSuggestedAngle(job),
     status: "new",
   }));
-
-  const { error: insertError } = await supabase.from("radar_signals").insert(signals);
+  const { error: insertError } = await supabase.from("radar_signals").insert(signals as any);
   if (insertError) return { created: 0, error: insertError.message };
-
-  await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null }).eq("id", source.id);
+  await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null } as any).eq("id", source.id);
   return { created: signals.length };
 }
 
 export async function scanAllActiveSources(): Promise<{ created: number; scanned_sources: number; errors: string[] }> {
   const supabase = getServerSupabaseClient();
-if (!supabase) return { created: 0, error: "Supabase not configured." };
+  if (!supabase) return { created: 0, scanned_sources: 0, errors: ["Supabase not configured."] };
   const { data: sources, error } = await supabase.from("radar_sources").select("*").eq("is_active", true);
   if (error || !sources) return { created: 0, scanned_sources: 0, errors: [error?.message ?? "Failed to load sources"] };
-
   let totalCreated = 0;
   const errors: string[] = [];
-
   for (const source of sources as RadarSource[]) {
     const result = await scanSource(source);
     totalCreated += result.created;
     if (result.error) errors.push(`${source.name}: ${result.error}`);
   }
-
   return { created: totalCreated, scanned_sources: sources.length, errors };
 }
