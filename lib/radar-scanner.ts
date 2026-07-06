@@ -228,7 +228,7 @@ export async function scanSource(source: RadarSource): Promise<{ created: number
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    await supabase.from("radar_sources").update({ last_error: errorMessage, last_scanned_at: new Date().toISOString() } as any).eq("id", source.id);
+    await (supabase as any).from("radar_sources").update({ last_error: errorMessage, last_scanned_at: new Date().toISOString() }).eq("id", source.id);
     return { created: 0, error: errorMessage };
   }
   const keywords = Array.isArray(source.keywords) ? source.keywords : [];
@@ -245,7 +245,7 @@ export async function scanSource(source: RadarSource): Promise<{ created: number
   const existingUrls = new Set((existingSignals ?? []).map((s: { url: string }) => s.url));
   const newJobs = relevant.filter((job) => !existingUrls.has(job.url));
   if (!newJobs.length) {
-    await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null } as any).eq("id", source.id);
+    await (supabase as any).from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null }).eq("id", source.id);
     return { created: 0 };
   }
   const signals: RadarSignalInsert[] = newJobs.map((job) => ({
@@ -262,9 +262,9 @@ export async function scanSource(source: RadarSource): Promise<{ created: number
     suggested_angle: buildSuggestedAngle(job),
     status: "new",
   }));
-  const { error: insertError } = await supabase.from("radar_signals").insert(signals as any);
+  const { error: insertError } = await (supabase as any).from("radar_signals").insert(signals);
   if (insertError) return { created: 0, error: insertError.message };
-  await supabase.from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null } as any).eq("id", source.id);
+  await (supabase as any).from("radar_sources").update({ last_scanned_at: new Date().toISOString(), last_error: null }).eq("id", source.id);
   return { created: signals.length };
 }
 
