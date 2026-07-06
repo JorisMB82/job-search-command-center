@@ -1,98 +1,100 @@
-export type RadarSourceType = "rss" | "hackernews" | "rwa_news" | "tac_research" | "manual" | "github_search" | "sec_edgar";
-export type RadarSignalStatus = "new" | "saved" | "watching" | "dismissed" | "converted";
-export type RadarSignalType = "funding" | "expansion" | "product_launch" | "partnership" | "regulatory" | "hiring" | "market_entry" | "leadership" | "strategic_pivot" | "other";
+export type RadarSourceType =
+  | "rss"
+  | "atom"
+  | "wellfound"
+  | "builtin"
+  | "manual";
 
-export type RadarSource = {
+export interface RadarSource {
   id: string;
   created_at: string;
   updated_at: string;
   name: string;
   url: string;
   source_type: RadarSourceType;
-  category: string | null;
+  category: string;
   keywords: string[];
   is_active: boolean;
-  notes: string | null;
   last_scanned_at: string | null;
   last_error: string | null;
-};
+}
 
-export type RadarSignal = {
+export interface RadarSignal {
   id: string;
   created_at: string;
   updated_at: string;
-  source_id: string | null;
-  company: string | null;
+  source_id: string;
+  source_name: string;
   headline: string;
-  url: string | null;
-  source_name: string | null;
-  published_at: string | null;
-  signal_type: RadarSignalType;
-  category: string | null;
+  company: string | null;
+  url: string;
   summary: string | null;
-  raw_excerpt: string | null;
+  published_at: string | null;
+  signal_type: string;
+  category: string;
   relevance_score: number;
-  status: RadarSignalStatus;
   suggested_angle: string | null;
-  notes: string | null;
-  chatgpt_output: string | null;
-  dedupe_key: string | null;
-};
+  status: "new" | "saved" | "dismissed" | "converted";
+}
 
-export type StrategicAngle = {
-  id: string;
-  created_at: string;
-  updated_at: string;
+export type RadarSignalInsert = Omit<RadarSignal, "id" | "created_at" | "updated_at">;
+
+export interface StarterSource {
   name: string;
-  category: string | null;
-  best_fit_company: string | null;
-  trigger_signals: string[];
-  pain_hypothesis: string | null;
-  credibility_points: string | null;
-  short_pitch: string | null;
-  longer_thesis: string | null;
-  cta: string | null;
-  relevant_resume_template: string | null;
+  url: string;
+  source_type: RadarSourceType;
+  category: string;
+  keywords: string[];
   is_active: boolean;
-  sort_order: number;
-};
+}
 
-export type TargetCompany = {
-  id: string;
-  created_at: string;
-  updated_at: string;
-  company: string;
-  website: string | null;
-  sector: string | null;
-  stage: string | null;
-  target_status: string;
-  best_signal_id: string | null;
-  best_angle_id: string | null;
-  selected_resume_template: string | null;
-  why_interesting: string | null;
-  pain_hypothesis: string | null;
-  unposted_role_thesis: string | null;
-  proposal_angle: string | null;
-  contact_strategy: string | null;
-  outreach_status: string;
-  contact_name: string | null;
-  contact_title: string | null;
-  contact_url: string | null;
-  last_touch_date: string | null;
-  next_action_date: string | null;
-  notes: string | null;
-};
-
-export type RadarMessage = {
-  id: string;
-  created_at: string;
-  updated_at: string;
-  target_company_id: string | null;
-  signal_id: string | null;
-  angle_id: string | null;
-  message_type: string;
-  prompt_text: string | null;
-  output_text: string | null;
-  status: string;
-  notes: string | null;
-};
+export const STARTER_JOB_SOURCES: StarterSource[] = [
+  {
+    name: "Crypto Jobs List",
+    url: "https://cryptojobslist.com/rss.xml",
+    source_type: "rss",
+    category: "Digital Assets / Web3",
+    keywords: ["strategy", "operations", "chief of staff", "head of", "business development", "partnerships", "growth", "director", "vp"],
+    is_active: true,
+  },
+  {
+    name: "Web3.career",
+    url: "https://web3.career/rss",
+    source_type: "rss",
+    category: "Digital Assets / Web3",
+    keywords: ["strategy", "operations", "head of", "business development", "partnerships", "chief of staff", "director"],
+    is_active: true,
+  },
+  {
+    name: "Wellfound — Strategy & Ops (NYC / Remote)",
+    url: "strategy operations new york remote",
+    source_type: "wellfound",
+    category: "Startup / Early Stage",
+    keywords: ["strategy", "operations", "chief of staff", "business development", "partnerships", "fintech", "crypto"],
+    is_active: false,
+  },
+  {
+    name: "Wellfound — Crypto & Web3",
+    url: "crypto web3 blockchain operations strategy",
+    source_type: "wellfound",
+    category: "Digital Assets / Web3",
+    keywords: ["strategy", "operations", "head of", "director", "partnerships", "business development"],
+    is_active: false,
+  },
+  {
+    name: "Builtin NYC — Fintech Jobs",
+    url: "https://www.builtinnyc.com/jobs/finance",
+    source_type: "builtin",
+    category: "Fintech / NYC",
+    keywords: ["strategy", "operations", "chief of staff", "director", "vp", "partnerships", "growth"],
+    is_active: false,
+  },
+  {
+    name: "Pallet — Fintech RSS",
+    url: "https://pallet.xyz/list/fintech-jobs/jobs.rss",
+    source_type: "rss",
+    category: "Fintech / Startup",
+    keywords: ["strategy", "operations", "business development", "director", "chief of staff"],
+    is_active: false,
+  },
+];
