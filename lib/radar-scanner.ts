@@ -49,15 +49,17 @@ function extractAllTags(xml: string, tag: string): string[] {
 
 function stripHtml(html: string): string {
   return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<p[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/?(p|div|li|h[1-6]|section|article)[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
-    .replace(/&#\d+;/g, "")
-    .replace(/\s{3,}/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/\s{2,}/g, " ")
     .trim();
 }
 
@@ -80,28 +82,46 @@ function parseLocationFromText(text: string): string {
 
 async function parseJobRssFeed(source: RadarSource): Promise<ParsedJob[]> {
   const response = await fetch(source.url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)" },
-    signal: AbortSignal.timeout(15_000),
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const xml = await response.text();
   const items = extractAllTags(xml, "item");
   const jobs: ParsedJob[] = [];
   for (const item of items) {
-    const title = stripHtml(extractTag(item, "title"));
+    const rawTitle = stripHtml(extractTag(item, "title"));
     const link = extractTag(item, "link") || extractTag(item, "guid");
     const description = stripHtml(extractTag(item, "description") || extractTag(item, "content:encoded") || "");
     const pubDate = parseRssDate(extractTag(item, "pubDate") || extractTag(item, "dc:date"));
-    let company = extractTag(item, "company") || extractTag(item, "author") || "";
+
+    // Extract company — try multiple patterns:
+    // 1. Explicit tags
+    // 2. "Company: Job Title" format (We Work Remotely)
+    // 3. "Role at Company" format
+    let company = extractTag(item, "company") || extractTag(item, "author") || extractTag(item, "dc:creator") || "";
+    let title = rawTitle;
     if (!company) {
-      const atMatch = /\bat\s+([^[\]()\n]+?)(?:\s*[-|·]|$)/i.exec(title);
-      if (atMatch) company = atMatch[1].trim();
+      const colonMatch = /^([^:]{2,40}):\s+(.+)$/.exec(rawTitle);
+      if (colonMatch) {
+        company = colonMatch[1].trim();
+        title = colonMatch[2].trim();
+      } else {
+        const atMatch = /\bat\s+([^[\]()\n]+?)(?:\s*[-|·]|$)/i.exec(rawTitle);
+        if (atMatch) company = atMatch[1].trim();
+      }
     }
+
     const location = stripHtml(
       extractTag(item, "location") ||
       extractTag(item, "job:location") ||
       extractTag(item, "georss:featureName") || ""
     ) || parseLocationFromText(title + " " + description);
+
     jobs.push({
       title: title || "Unknown role",
       company: company || "Unknown company",
