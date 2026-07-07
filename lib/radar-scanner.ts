@@ -26,7 +26,7 @@ const ROLE_EXCLUDE_KEYWORDS: string[] = [
   "software engineer", "frontend", "backend", "fullstack", "full stack",
   "devops", "sre", "machine learning", "data scientist", "data engineer",
   "mobile developer", "ios developer", "android developer", "qa engineer",
-  "security engineer", "cloud engineer", "platform engineer", "developer",
+  "security engineer", "cloud engineer", "platform engineer", "solutions engineer", "developer",
   "programmer", "coding",
   // Finance / accounting specialists
   "financial controller", "controller", "financial analyst", "accountant",
