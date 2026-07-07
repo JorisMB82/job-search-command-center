@@ -26,7 +26,7 @@ const ROLE_EXCLUDE_KEYWORDS: string[] = [
   "software engineer", "frontend", "backend", "fullstack", "full stack",
   "devops", "sre", "machine learning", "data scientist", "data engineer",
   "mobile developer", "ios developer", "android developer", "qa engineer",
-  "security engineer", "cloud engineer", "platform engineer", "solutions engineer", "developer",
+  "security engineer", "cloud engineer", "platform engineer", "developer",
   "programmer", "coding",
   // Finance / accounting specialists
   "financial controller", "controller", "financial analyst", "accountant",
@@ -243,11 +243,31 @@ function scoreJob(job: ParsedJob, keywords: string[]): number {
   // Hard exclude
   if (ROLE_EXCLUDE_KEYWORDS.some((kw) => titleLower.includes(kw.toLowerCase()))) return 0;
 
+  // Automatic 10/10 for Joris's top priority roles
+  const topPriorityTitles = [
+    "chief of staff",
+    "head of strategy",
+    "strategy and operations",
+    "strategy & operations",
+    "head of operations",
+    "vp of strategy",
+    "director of strategy",
+    "head of business development",
+    "vp of business development",
+    "director of partnerships",
+    "head of partnerships",
+  ];
+  if (topPriorityTitles.some((t) => titleLower.includes(t))) return 10;
+
   let score = 0;
 
   // Seniority bonus — Joris targets Director+ level
-  const seniorTitles = ["chief of staff", "head of", "vice president", "vp ", "director", "president", "managing director", "general manager", "country manager"];
+  const seniorTitles = ["head of", "vice president", "vp ", "director", "president", "managing director", "general manager", "country manager"];
   if (seniorTitles.some((t) => titleLower.includes(t))) score += 3;
+
+  // Fintech/crypto domain bonus
+  const domainTerms = ["fintech", "crypto", "web3", "blockchain", "digital assets", "defi", "payments", "capital markets", "rwa", "tokenization"];
+  if (domainTerms.some((t) => text.includes(t))) score += 2;
 
   // Source keywords
   for (const kw of keywords) { if (text.includes(kw.toLowerCase())) score += 2; }
