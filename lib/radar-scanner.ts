@@ -4,22 +4,47 @@ import type { RadarSource, RadarSignalInsert } from "./radar-types";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const RELEVANCE_KEYWORDS: string[] = [
-  "chief of staff", "head of", "vp of", "director of", "strategy", "operations",
-  "business development", "partnerships", "corporate development", "growth",
-  "general manager", "chief operating", "president",
+  // Senior roles — high weight
+  "chief of staff", "head of", "vp of", "vice president", "director of",
+  "strategy", "operations", "business development", "partnerships",
+  "corporate development", "growth", "general manager", "chief operating",
+  "president", "managing director", "country manager", "regional director",
+  // Domains
   "tokenization", "digital assets", "rwa", "blockchain", "crypto", "web3",
   "defi", "stablecoin", "fintech", "payments", "capital markets",
-  "asset management", "investment", "venture",
+  "asset management", "investment", "venture", "trade finance",
+  // Company stages
   "startup", "early stage", "seed", "series a", "series b",
-  "remote", "new york", "nyc", "manhattan",
+  // Geographies Joris operates in
+  "remote", "new york", "nyc", "manhattan", "london", "latam",
+  "latin america", "africa", "paris", "madrid", "miami",
 ];
 
+// Roles to exclude entirely — not Joris's profile
 const ROLE_EXCLUDE_KEYWORDS: string[] = [
+  // Engineering
   "software engineer", "frontend", "backend", "fullstack", "full stack",
   "devops", "sre", "machine learning", "data scientist", "data engineer",
   "mobile developer", "ios developer", "android developer", "qa engineer",
-  "security engineer", "cloud engineer", "platform engineer",
+  "security engineer", "cloud engineer", "platform engineer", "developer",
+  "programmer", "coding",
+  // Finance / accounting specialists
+  "financial controller", "controller", "financial analyst", "accountant",
+  "accounting", "bookkeeper", "tax manager", "tax specialist", "auditor",
+  "cpa", "payroll",
+  // Tool-specific consulting
+  "oracle", "workday", "sap consultant", "salesforce", "netsuite",
+  "erp consultant", "erp implementation",
+  // Support / admin
+  "customer support", "customer service", "customer success manager",
+  "technical support", "help desk", "receptionist", "administrative assistant",
+  // Language-restricted (Joris speaks EN/ES/FR — exclude others)
+  "fluent german", "fluent mandarin", "fluent japanese", "fluent korean",
+  "fluent dutch", "fluent portuguese",
 ];
+
+// Minimum score to be saved — raises the bar above noise
+const MIN_RELEVANCE_SCORE = 3;
 
 interface ParsedJob {
   title: string;
@@ -31,10 +56,16 @@ interface ParsedJob {
 }
 
 function extractTag(xml: string, tag: string): string {
+  // CDATA block — return raw HTML content (will be cleaned by stripHtml)
   const cdataMatch = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, "i").exec(xml);
   if (cdataMatch) return cdataMatch[1].trim();
+  // Plain or entity-encoded content — decode angle brackets first so stripHtml can clean them
   const match = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i").exec(xml);
-  return match ? match[1].replace(/<[^>]+>/g, "").trim() : "";
+  if (!match) return "";
+  return match[1]
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
 }
 
 function extractAllTags(xml: string, tag: string): string[] {
@@ -50,8 +81,11 @@ function extractAllTags(xml: string, tag: string): string[] {
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, " ")
-    .replace(/<\/?(p|div|li|h[1-6]|section|article)[^>]*>/gi, " ")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<\/?(p|div|li|ul|ol|h[1-6]|section|article|strong|em|b|i|span)[^>]*>/gi, " ")
+    .replace(/<img[^>]*>/gi, "")
+    .replace(/<a[^>]*>/gi, "")
+    .replace(/<\/a>/gi, "")
+    .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -75,8 +109,9 @@ function parseLocationFromText(text: string): string {
   const lower = text.toLowerCase();
   if (lower.includes("new york") || lower.includes("nyc")) return "New York, NY";
   if (lower.includes("san francisco") || lower.includes("sf")) return "San Francisco, CA";
-  if (lower.includes("remote")) return "Remote";
   if (lower.includes("london")) return "London";
+  if (lower.includes("miami")) return "Miami, FL";
+  if (lower.includes("remote")) return "Remote";
   return "";
 }
 
@@ -202,11 +237,24 @@ async function parseBuiltinFeed(source: RadarSource): Promise<ParsedJob[]> {
 }
 
 function scoreJob(job: ParsedJob, keywords: string[]): number {
-  const text = `${job.title} ${job.company} ${job.description} ${job.location}`.toLowerCase();
-  if (ROLE_EXCLUDE_KEYWORDS.some((kw) => job.title.toLowerCase().includes(kw))) return 0;
+  const titleLower = job.title.toLowerCase();
+  const text = `${titleLower} ${job.company} ${job.description} ${job.location}`.toLowerCase();
+
+  // Hard exclude
+  if (ROLE_EXCLUDE_KEYWORDS.some((kw) => titleLower.includes(kw.toLowerCase()))) return 0;
+
   let score = 0;
+
+  // Seniority bonus — Joris targets Director+ level
+  const seniorTitles = ["chief of staff", "head of", "vice president", "vp ", "director", "president", "managing director", "general manager", "country manager"];
+  if (seniorTitles.some((t) => titleLower.includes(t))) score += 3;
+
+  // Source keywords
   for (const kw of keywords) { if (text.includes(kw.toLowerCase())) score += 2; }
+
+  // Global relevance keywords
   for (const kw of RELEVANCE_KEYWORDS) { if (text.includes(kw.toLowerCase())) score += 1; }
+
   return Math.min(10, score);
 }
 
@@ -229,6 +277,7 @@ function buildSuggestedAngle(job: ParsedJob): string {
   if (text.includes("chief of staff") || text.includes("founder")) return "Chief of Staff / Founder Office track record";
   if (text.includes("partnership") || text.includes("business development")) return "BD & Partnerships background";
   if (text.includes("venture") || text.includes("startup")) return "Venture Builder / Startup Operator experience";
+  if (text.includes("latam") || text.includes("latin america") || text.includes("africa")) return "LATAM / Africa market expertise";
   return "Strategy & Operations generalist";
 }
 
@@ -256,7 +305,7 @@ export async function scanSource(source: RadarSource): Promise<{ created: number
   const relevant = jobs.filter((job) => {
     if (!job.url) return false;
     if (job.postedAt && job.postedAt < cutoff) return false;
-    return scoreJob(job, keywords) > 0;
+    return scoreJob(job, keywords) >= MIN_RELEVANCE_SCORE;
   });
   const { data: existingSignals } = await supabase
     .from("radar_signals")
